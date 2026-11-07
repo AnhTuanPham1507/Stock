@@ -1,0 +1,21 @@
+{
+  "name": "spy-flow-realtime-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Node.js server for the SPY Flow realtime dashboard",
+  "engines": {
+    "node": ">=22.4.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "preview:chart": "node scripts/preview-chart.mjs",
+    "check:market": "node scripts/check-market-access.mjs",
+    "check": "node --check src/server.mjs && node --check public/app.js && node --check scripts/preview-chart.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "chart.js": "4.4.2"
+  },
+  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee"
+}

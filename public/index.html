@@ -1,0 +1,992 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SPY Flow Imbalance · Massive.com</title>
+<script src="/vendor/chart.umd.js" defer></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#06080e;--panel:#0b101a;--border:#1a2840;
+  --accent:#38bdf8;--green:#34d399;--red:#f87171;
+  --amber:#fbbf24;--purple:#a78bfa;--text:#afc2d3;
+  --bright:#d8e6f5;--dim:#243044;
+}
+body{background:var(--bg);color:var(--bright);font-family:'Inter',system-ui,sans-serif;font-size:13px;min-height:100vh}
+.mono{font-family:'Courier New',monospace}
+
+/* ── header ── */
+#hdr{background:#04060c;border-bottom:1px solid var(--border);padding:9px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:20}
+.logo{font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:3px}
+.badge{font-family:'Courier New',monospace;font-size:8px;padding:2px 8px;border-radius:3px}
+.bl{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+.bw{background:rgba(251,191,36,.14);color:var(--amber);border:1px solid rgba(251,191,36,.28)}
+.be{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+.blink{animation:bl 1.2s step-start infinite}
+@keyframes bl{50%{opacity:.12}}
+
+/* ── key gate ── */
+#key-gate{display:flex;align-items:center;justify-content:center;min-height:80vh;padding:40px}
+.kcard{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:32px;max-width:460px;width:100%;display:flex;flex-direction:column;gap:14px}
+.kcard h2{font-family:'Courier New',monospace;font-size:12px;color:var(--accent);letter-spacing:2px}
+.kcard p{font-family:'Courier New',monospace;font-size:10px;color:var(--text);line-height:1.9}
+.kinput{background:#04060c;border:1px solid var(--border);border-radius:4px;color:var(--bright);font-family:'Courier New',monospace;font-size:12px;padding:10px 14px;width:100%;outline:none;transition:border-color .2s}
+.kinput:focus{border-color:var(--accent)}
+.kbtn{font-family:'Courier New',monospace;font-size:10px;letter-spacing:2px;padding:10px;border-radius:4px;cursor:pointer;border:1px solid var(--accent);background:rgba(56,189,248,.14);color:var(--accent);width:100%;transition:opacity .2s}
+.kbtn:hover{opacity:.85}
+.demo-toggle[aria-pressed="true"],.demo-badge{background:rgba(167,139,250,.14);color:#c4b5fd;border:1px solid rgba(167,139,250,.4)}
+.tv-demo-label{display:none}
+body.chart-window-mode .tv-demo-label:not([hidden]){display:inline-block}
+.kerr{font-family:'Courier New',monospace;font-size:9px;color:var(--red);display:none;padding:6px 10px;background:rgba(248,113,113,.08);border-radius:3px}
+
+/* ── main ── */
+#main{display:none;padding:14px 18px;flex-direction:column;gap:12px}
+#main.on{display:flex}
+
+/* ── stat strip ── */
+.strip{display:flex;gap:8px;flex-wrap:wrap}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:9px 14px;min-width:110px}
+.sl{font-family:'Courier New',monospace;font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px}
+.sv{font-family:'Courier New',monospace;font-size:20px;font-weight:700;line-height:1}
+.ss{font-family:'Courier New',monospace;font-size:9px;margin-top:2px}
+
+/* ── signal box ── */
+#signal-box{border-radius:6px;padding:14px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;border:1px solid;transition:all .5s}
+.sig-dir{font-family:'Courier New',monospace;font-size:28px;font-weight:700;letter-spacing:2px}
+.sig-sub{font-family:'Courier New',monospace;font-size:9px;color:var(--text);margin-top:4px}
+.sig-str{font-family:'Courier New',monospace;font-size:11px;margin-top:6px}
+.sig-bars{flex:1;min-width:220px;display:flex;flex-direction:column;gap:7px}
+.bar-row{display:flex;align-items:center;gap:8px;font-family:'Courier New',monospace;font-size:9px}
+.bar-lbl{color:var(--text);width:104px;flex-shrink:0}
+.bar-track{flex:1;height:8px;background:var(--dim);border-radius:4px;position:relative;overflow:hidden}
+.bar-fill{position:absolute;top:0;height:100%;border-radius:4px;transition:width .6s}
+.bar-val{width:52px;text-align:right;flex-shrink:0}
+
+/* ── meters ── */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 14px}
+[hidden]{display:none!important}
+.slbl{font-family:'Courier New',monospace;font-size:9px;letter-spacing:3px;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.slbl::before{content:'';display:inline-block;width:10px;height:1px;background:var(--accent)}
+.slbl::after{content:'';flex:1;height:1px;background:var(--border)}
+.meter-track{height:22px;border-radius:11px;background:var(--dim);position:relative;overflow:hidden}
+.meter-l{position:absolute;right:50%;top:0;height:100%;background:var(--red);border-radius:11px 0 0 11px;transition:width .7s}
+.meter-r{position:absolute;left:50%;top:0;height:100%;background:var(--green);border-radius:0 11px 11px 0;transition:width .7s}
+.meter-mid{position:absolute;left:50%;top:0;width:2px;height:100%;background:#fff2;transform:translateX(-50%)}
+.meter-labels{display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:8px;color:var(--text);margin-top:4px}
+
+/* ── strike ladder ── */
+.sk-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;padding:1px 0}
+.sk-lbl{font-family:'Courier New',monospace;font-size:9px;width:54px;text-align:right;flex-shrink:0}
+.sk-track{flex:1;height:11px;background:var(--dim);border-radius:2px;position:relative;overflow:hidden}
+.sk-put{position:absolute;right:50%;top:0;height:100%;background:var(--red);opacity:.8;transition:width .5s}
+.sk-call{position:absolute;left:50%;top:0;height:100%;background:var(--green);opacity:.8;transition:width .5s}
+.sk-mid{position:absolute;left:50%;top:0;width:1px;height:100%;background:#fff3}
+.sk-vols{font-family:'Courier New',monospace;font-size:8px;width:90px;flex-shrink:0}
+.sk-atm{border-radius:3px;background:rgba(56,189,248,.05);border:1px solid rgba(56,189,248,.25)!important}
+
+/* ── flow table ── */
+.fhdr,.frow{display:grid;grid-template-columns:18px 44px 50px 55px 52px 50px 66px 42px 52px 42px 54px 90px;gap:3px;padding:4px 10px;font-family:'Courier New',monospace;font-size:10px;align-items:center}
+.fhdr{font-size:8px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)}
+.frow:nth-child(even){background:rgba(26,40,64,.2)}
+.frow.wh{background:rgba(251,191,36,.06);border-left:2px solid var(--amber)}
+.frow.top1{background:rgba(56,189,248,.13)!important;border-left:3px solid #38bdf8!important;box-shadow:inset 0 0 12px rgba(56,189,248,.08);}
+.frow.top2{background:rgba(56,189,248,.08)!important;border-left:3px solid rgba(56,189,248,.6)!important;}
+.frow.top3{background:rgba(56,189,248,.04)!important;border-left:3px solid rgba(56,189,248,.35)!important;}
+.rank-badge{display:inline-block;font-size:8px;font-weight:800;padding:1px 4px;border-radius:3px;letter-spacing:.5px;margin-right:1px;}
+.rank-1{background:rgba(56,189,248,.25);color:#38bdf8;}
+.rank-2{background:rgba(56,189,248,.15);color:#7dd3fc;}
+.rank-3{background:rgba(56,189,248,.08);color:#93c5fd;}
+.fscroll{max-height:380px;overflow:auto}
+.fempty{padding:36px;text-align:center;font-family:'Courier New',monospace;font-size:11px;color:var(--dim);line-height:2}
+
+/* ── individual order pressure ── */
+.pressure-summary{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--border);font-family:'Courier New',monospace;font-size:9px}
+.pressure-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pressure-select{background:#04060c;border:1px solid rgba(56,189,248,.45);border-radius:4px;color:var(--accent);font-family:'Courier New',monospace;font-size:10px;font-weight:700;padding:6px 28px 6px 9px;outline:none;cursor:pointer}
+.pressure-select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(56,189,248,.09)}
+.pressure-head,.pressure-row{display:grid;grid-template-columns:72px 74px 44px 58px 58px 82px 52px 54px 54px 58px 82px 74px 70px 82px;gap:4px;padding:5px 10px;min-width:1060px;font-family:'Courier New',monospace;font-size:10px;align-items:center}
+.pressure-head{font-size:8px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)}
+.pressure-row{border-left:3px solid transparent;border-bottom:1px solid rgba(26,40,64,.45)}
+.pressure-row.bullish{border-left-color:var(--green);background:rgba(52,211,153,.045)}
+.pressure-row.bearish{border-left-color:var(--red);background:rgba(248,113,113,.045)}
+.pressure-row.unclear{border-left-color:var(--amber);background:rgba(251,191,36,.025)}
+.pressure-scroll{max-height:420px;overflow:auto}
+
+/* ── intraday tape ── */
+.thdr,.trow{display:grid;grid-template-columns:64px 16px 48px 56px 52px 52px 78px 46px 70px 46px 76px 76px 58px 64px 112px 70px 92px;gap:3px;padding:4px 10px;min-width:1160px;font-family:'Courier New',monospace;font-size:10px;align-items:center}
+.thdr{font-size:8px;color:var(--dim);letter-spacing:1px;border-bottom:1px solid var(--border)}
+.trow:nth-child(even){background:rgba(26,40,64,.2)}
+.trow.wh{background:rgba(251,191,36,.06);border-left:2px solid var(--amber)}
+@keyframes rowflash{from{background:rgba(56,189,248,.18)}to{background:transparent}}
+.trow.flash{animation:rowflash .9s ease-out}
+.tape-status{font-family:'Courier New',monospace;font-size:8px;color:var(--dim);padding:5px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+
+/* ── controls ── */
+.ctrls{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:7px 12px;border-bottom:1px solid var(--border)}
+.btn{font-family:'Courier New',monospace;font-size:9px;letter-spacing:1px;padding:4px 11px;border-radius:3px;cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text);text-transform:uppercase;transition:all .15s}
+.btn.on{border-color:var(--accent);background:rgba(56,189,248,.12);color:var(--accent)}
+.btn.g.on{border-color:var(--green);background:rgba(52,211,153,.12);color:var(--green)}
+.btn.r.on{border-color:var(--red);background:rgba(248,113,113,.12);color:var(--red)}
+.btn.a.on{border-color:var(--amber);background:rgba(251,191,36,.12);color:var(--amber)}
+
+/* ── tab contents ── */
+.tabs{display:flex;gap:2px;flex-wrap:wrap;align-items:center}
+.tc{display:none}.tc.on{display:flex;flex-direction:column;gap:12px}
+
+/* ── plan / error ── */
+.plan-box{background:rgba(56,189,248,.04);border:1px solid rgba(56,189,248,.18);border-radius:6px;padding:14px;font-family:'Courier New',monospace;font-size:10px;color:var(--text);line-height:1.9;display:none}
+.plan-box a{color:var(--accent)}
+#errbox{display:none;font-family:'Courier New',monospace;font-size:10px;color:var(--red);background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.2);border-radius:4px;padding:10px 14px}
+.prem-row{display:flex;gap:10px}
+.prem-side{flex:1;border-radius:6px;padding:12px;border:1px solid}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:600px){.grid2{grid-template-columns:1fr}}
+.chart-h{position:relative;height:180px}
+.chart-m{position:relative;height:200px}
+.chart-s{position:relative;height:160px}
+/* ── live GEX ratio histogram + Bollinger bands ── */
+.gex-ratio-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.gex-ratio-title{font:900 13px 'Courier New',monospace;letter-spacing:1.5px;color:#dff7ff}
+.gex-ratio-sub{font:700 10px/1.5 'Courier New',monospace;color:#9fb4c8;margin-top:3px}
+.gex-ratio-time{font:800 10px 'Courier New',monospace;color:#22d3ee;border:1px solid rgba(34,211,238,.28);background:rgba(34,211,238,.06);border-radius:4px;padding:5px 8px;white-space:nowrap}
+.gex-ratio-chart{position:relative;height:460px;min-height:460px;background:#070b12;border:1px solid rgba(26,40,64,.65);border-radius:5px;padding:6px}
+.gex-ratio-stats{display:grid;grid-template-columns:repeat(5,minmax(115px,1fr));gap:8px;margin-top:9px}
+.gex-ratio-stat{background:#070b12;border:1px solid var(--border);border-radius:5px;padding:7px 9px;min-width:0}
+.gex-ratio-stat .k{font:800 8px 'Courier New',monospace;letter-spacing:1px;color:#9fb4c8;margin-bottom:3px}
+.gex-ratio-stat .v{font:900 14px 'Courier New',monospace;color:#e8f3ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gex-ratio-status{font:800 9px/1.45 'Courier New',monospace;color:#8ea4b8;margin-top:7px}
+@media(max-width:900px){.gex-ratio-stats{grid-template-columns:repeat(2,minmax(115px,1fr))}.gex-ratio-chart{height:340px;min-height:340px}}
+/* ── half-width placement (Premium tab top row) ── */
+#premium-top-row .gex-ratio-chart{height:360px;min-height:360px}
+#premium-top-row .gex-ratio-stats{grid-template-columns:repeat(2,minmax(90px,1fr))}
+#premium-top-row .gex-ratio-title{font-size:11px}
+.premium-top-left{display:flex;flex-direction:column;gap:10px;min-width:0;height:100%}
+#premium-top-row .prem-row{flex-wrap:wrap;flex:1;min-height:0}
+#premium-top-row .prem-side{min-width:200px;display:flex;flex-direction:column}
+#premium-top-row #gex-ratio-panel{display:flex;flex-direction:column;height:100%}
+#premium-top-row .gex-ratio-status{margin-top:auto;padding-top:7px}
+@media(max-width:600px){#premium-top-row{grid-template-columns:1fr}}
+.premium-popout-bar{display:flex;justify-content:flex-end;margin-bottom:8px}
+body.premium-window-mode .tab-switch-btn{display:none}
+body.premium-window-mode .premium-popout-bar{display:none}
+.expiry-select{
+  width:100%;
+  min-width:152px;
+  background:#04060c;
+  border:1px solid rgba(56,189,248,.48);
+  border-radius:4px;
+  color:var(--bright);
+  font-family:'Courier New',monospace;
+  font-size:13px;
+  font-weight:700;
+  padding:6px 8px;
+  outline:none;
+  color-scheme:dark;
+  cursor:pointer;
+}
+.expiry-select:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(56,189,248,.10);
+}
+
+/* ── readability boost: larger, brighter secondary labels ── */
+[style*="font-size:8px"]{font-size:10.5px!important;line-height:1.45}
+[style*="font-size:9px"]{font-size:11px!important;line-height:1.4}
+[style*="color:var(--dim)"],
+[style*="color: var(--dim)"]{color:#9fb4c8!important}
+[style*="color:var(--text)"],
+[style*="color: var(--text)"]{color:#c1d1df!important}
+.badge{font-size:10px;font-weight:700}
+.sl{font-size:10.5px;color:#c1d1df;font-weight:700}
+.ss{font-size:11px;color:#afc2d3}
+.slbl{font-size:11.5px;font-weight:700}
+.sig-sub,.bar-row,.meter-labels,.sk-lbl,.sk-vols,
+.pressure-summary,.tape-status,.plan-box,.kcard p{
+  font-size:10.5px;
+  color:#afc2d3;
+}
+.bar-lbl{color:#c1d1df;font-weight:700}
+.fhdr,.pressure-head,.thdr{
+  font-size:9.5px;
+  line-height:1.35;
+  color:#c7d6e3;
+  font-weight:700;
+}
+.frow,.pressure-row,.trow{font-size:11px;line-height:1.35}
+.btn{font-size:10.5px;font-weight:700;color:#b8cad9}
+.rank-badge{font-size:9.5px}
+.fempty{font-size:12px;color:#9fb4c8}
+
+/* ── Options Swift native canvas workstation ── */
+.tv-shell{background:#070b12;border:1px solid var(--border);border-radius:7px;overflow:hidden;min-height:680px}
+.tv-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--border);background:#080d16}
+.tv-symbol{font:800 15px 'Courier New',monospace;color:#eef6ff;margin-right:4px}
+.tv-live{font:700 12px 'Courier New',monospace;color:var(--green);min-width:76px}
+.tv-btn{font:700 10px 'Courier New',monospace;color:#aebfd0;background:transparent;border:1px solid transparent;border-radius:4px;padding:6px 9px;cursor:pointer}
+.tv-btn:hover{background:#111a28;color:#fff}.tv-btn.on{background:#152338;border-color:#31547d;color:#58c7ff}.tv-btn:disabled{opacity:.42;cursor:not-allowed;background:transparent;color:#718096}
+.tv-flow-select{height:27px;border:1px solid #31547d;border-radius:4px;background:#0b1421;color:#78d5ff;padding:0 7px;font:800 10px 'Courier New',monospace;outline:none;cursor:pointer}.tv-flow-select:focus{border-color:#58c7ff;box-shadow:0 0 0 2px rgba(56,189,248,.12)}
+.tv-background-select{height:27px;border:1px solid #31547d;border-radius:4px;background:#0b1421;color:#78d5ff;padding:0 7px;font:800 10px 'Courier New',monospace;outline:none;cursor:pointer}.tv-background-select:focus{border-color:#58c7ff;box-shadow:0 0 0 2px rgba(56,189,248,.12)}
+.tv-mode-group{display:inline-flex;align-items:center;border:1px solid #223149;border-radius:5px;overflow:hidden;background:#070b12}
+.tv-mode-group .tv-btn{border:0;border-radius:0}.tv-mode-group .tv-btn+.tv-btn{border-left:1px solid #223149}
+.tv-divider{width:1px;height:22px;background:var(--border);margin:0 3px}
+.tv-status{margin-left:auto;font:10px 'Courier New',monospace;color:#91a7bb}
+#tv-main-chart{height:620px;position:relative}.tv-volume-wrap{height:135px;border-top:1px solid var(--border);position:relative}
+#tv-volume-chart{height:100%}.tv-watermark{position:absolute;left:14px;top:12px;z-index:2;pointer-events:none;font:700 10px 'Courier New',monospace;color:#70849a}
+#tv-chart-watermark{top:auto;bottom:12px}
+.os-chart-canvas{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;user-select:none}
+.os-chart-badge{font:900 9px 'Courier New',monospace;letter-spacing:1px;color:#38bdf8;border:1px solid rgba(56,189,248,.35);background:rgba(56,189,248,.08);border-radius:4px;padding:4px 7px}
+.tv-brand-watermark{display:flex;align-items:baseline;gap:9px}.tv-brand-watermark .tv-brand-name{font:900 18px 'Courier New',monospace;letter-spacing:2px;color:rgba(56,189,248,.34);text-shadow:0 0 14px rgba(14,165,233,.12)}.tv-brand-watermark .tv-brand-meta{font:700 9px 'Courier New',monospace;letter-spacing:.5px;color:#647a91}
+.tv-flow-label-layer{position:absolute;inset:0 58px 0 0;z-index:3;pointer-events:none;overflow:hidden}
+.tv-flow-candle-label{position:absolute;z-index:1;transform:translate(-50%,-50%);padding:4px 8px;border:1px solid rgba(148,163,184,.7);border-radius:4px;background:rgba(8,15,25,.94);box-shadow:0 2px 8px rgba(0,0,0,.72),inset 0 0 8px rgba(148,163,184,.08);text-align:center;font:900 10px/1.15 'Courier New',monospace;letter-spacing:.2px;white-space:nowrap}
+.tv-flow-candle-label.bullish{color:#55e6b2;background:rgba(4,45,36,.92);border-color:rgba(45,212,155,.74);box-shadow:0 2px 8px rgba(0,0,0,.72),inset 0 0 9px rgba(52,211,153,.18),0 0 5px rgba(16,185,129,.12)}
+.tv-flow-candle-label.bearish{color:#ff7183;background:rgba(58,18,27,.92);border-color:rgba(251,91,113,.74);box-shadow:0 2px 8px rgba(0,0,0,.72),inset 0 0 9px rgba(251,113,133,.18),0 0 5px rgba(244,63,94,.12)}
+.tv-flow-candle-label.unclear{color:#f6c85f;background:rgba(55,40,10,.92);border-color:rgba(251,191,36,.72)}
+.tv-flow-candle-label::after{display:none}
+.tv-flow-label-layer .tv-flow-dot,.tv-flow-label-layer .tv-flow-candle-label{pointer-events:auto;cursor:help}
+.tv-flow-dot{position:absolute;z-index:0;transform:translate(-50%,-50%);border-radius:50%;background:color-mix(in srgb,var(--c) 38%,transparent);border:1.5px solid var(--c);box-shadow:0 0 6px color-mix(in srgb,var(--c) 45%,transparent)}
+.tv-flow-dot.failed{border-style:dashed;background:transparent;box-shadow:none}
+.tv-flow-candle-label.full,.tv-flow-candle-label.chip{padding:1px 6px;border-radius:3px;font:800 10px/14px 'Courier New',monospace;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.tv-flow-candle-label.chip{padding:1px 5px;opacity:.9}
+.tv-flow-candle-label.full .flow-order-main,.tv-flow-candle-label.chip .flow-order-main{font-size:10px;text-shadow:none;letter-spacing:0}
+.tv-flow-candle-label:hover{z-index:5;opacity:1}
+.tv-flow-candle-label .flow-mark{color:#d8e6f5;font-weight:800}
+.tv-flow-candle-label .flow-pnl{font-weight:900}
+.tv-flow-candle-label .flow-pnl.up{color:#4ade80}
+.tv-flow-candle-label .flow-pnl.down{color:#ff6b81}
+.tv-flow-candle-label .flow-pnl.flat{color:#cbd5e1}
+.tv-flow-candle-label .flow-result{font-style:normal;margin-left:5px}.tv-flow-candle-label .flow-result.ok{color:#34d399}.tv-flow-candle-label .flow-result.no{color:#f87171}
+.tv-flow-connector{border-left-style:solid!important;opacity:.7}
+
+/* ── Options Swift AI decision layer ── */
+.os-ai-panel{position:absolute;left:10px;right:auto;top:10px;z-index:7;width:242px;max-width:calc(100% - 78px);padding:7px 8px;border:1px solid rgba(56,189,248,.35);border-radius:5px;background:rgba(4,9,16,.92);box-shadow:0 5px 18px rgba(0,0,0,.32);font-family:'Courier New',monospace;pointer-events:none;backdrop-filter:blur(3px)}
+.os-ai-head{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px}
+.os-ai-title{font-size:8px;font-weight:900;letter-spacing:1px;color:#7dd3fc}
+.os-ai-state{font-size:11px;font-weight:900;letter-spacing:.35px}
+.os-ai-confidence{font-size:18px;font-weight:900;line-height:1}
+.os-ai-sub{font-size:7.5px;color:#a9bed0;margin-top:1px}
+.os-ai-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 7px;margin-top:5px;padding-top:5px;border-top:1px solid rgba(56,189,248,.18)}
+.os-ai-row{font-size:7.5px;color:#a9bed0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.os-ai-row b{color:#e4eef7}
+.os-ai-action{margin-top:5px;padding:4px 5px;border-radius:3px;background:rgba(56,189,248,.07);font-size:7.5px;line-height:1.3;color:#c8d7e4}
+.os-ai-call{border-color:rgba(52,211,153,.5);box-shadow:0 8px 28px rgba(16,185,129,.08)}
+.os-ai-put{border-color:rgba(248,113,113,.5);box-shadow:0 8px 28px rgba(248,113,113,.08)}
+.os-ai-wait{border-color:rgba(251,191,36,.42)}
+@media(max-width:700px){.os-ai-panel{left:8px;right:auto;top:8px;width:220px;max-width:calc(100% - 70px)}.os-ai-grid{grid-template-columns:1fr 1fr}}
+
+.tv-flow-connector{position:absolute;width:1px;transform:translateX(-50%);border-left:1px dashed rgba(148,163,184,.48);z-index:0;pointer-events:none}
+.tv-flow-candle-label .flow-bias{display:block;font-size:11px}.tv-flow-candle-label .flow-bias.bullish{color:#6ee7b7;text-shadow:0 0 6px rgba(74,222,128,.45)}.tv-flow-candle-label .flow-bias.bearish{color:#fda4af;text-shadow:0 0 6px rgba(251,113,133,.45)}.tv-flow-candle-label .flow-bias.unclear{color:#fbbf24}
+.tv-flow-candle-label .flow-types{display:block;color:#b9c9d8;font-size:9px}.tv-flow-candle-label .flow-outcome{display:block;margin-top:1px;font-size:9px}.tv-flow-candle-label .flow-outcome.followed{color:#34d399}.tv-flow-candle-label .flow-outcome.failed{color:#f87171}.tv-flow-candle-label .flow-outcome.pending{color:#7f96ab}
+.tv-flow-candle-label .flow-order-main{display:block;color:inherit;font-size:10px;font-weight:900;letter-spacing:.25px;text-shadow:0 0 5px currentColor}.tv-flow-candle-label .flow-order-main.bullish,.tv-flow-candle-label .flow-order-main.bearish,.tv-flow-candle-label .flow-order-main.unclear{color:inherit}
+.tv-legend{display:flex;gap:14px;flex-wrap:wrap;padding:7px 11px;border-top:1px solid var(--border);font:10px 'Courier New',monospace;color:#9eb2c6;background:#080d16}
+/* Hide the informational legend without removing live indicator state or calculations. */
+.tv-legend{display:none!important}
+.tv-chart-window-notice{display:none;min-height:545px;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:30px;text-align:center;font:700 12px/1.7 'Courier New',monospace;color:#aebfd0}
+.tv-shell.chart-detached .tv-price-wrap,.tv-shell.chart-detached .tv-volume-wrap,.tv-shell.chart-detached .tv-legend,.tv-shell.chart-detached #swift-adx-pane{display:none}
+.tv-shell.chart-detached .tv-chart-window-notice{display:flex}
+.tv-window-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+body.chart-window-mode{margin:0;background:#070b12;overflow:hidden}
+body.chart-window-mode #hdr,body.chart-window-mode #key-gate,body.chart-window-mode #main>*:not(#tc-chart),body.chart-window-mode #tc-chart>.grid2{display:none!important}
+body.chart-window-mode #main{display:block!important;max-width:none;padding:0;margin:0}
+body.chart-window-mode #tc-chart{display:block!important;margin:0}
+body.chart-window-mode .tv-shell{border:0;border-radius:0;min-height:100vh}
+body.chart-window-mode #tv-main-chart{height:max(220px,calc(100vh - 125px - var(--swift-adx-height, 350px)));min-height:220px}
+body.chart-window-mode .tv-volume-wrap{height:110px}
+.tv-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}.tv-error{color:var(--amber)}
+.tv-color{width:26px;height:26px;padding:1px;border:1px solid var(--border);border-radius:4px;background:#070b12;cursor:pointer}.tv-study{display:inline-flex;align-items:center;gap:4px}
+@media(max-width:700px){#tv-main-chart{height:470px}.tv-volume-wrap{height:110px}.tv-flow-candle-label{min-width:58px;padding:3px 5px;font-size:10px}.tv-status{width:100%;margin-left:0}.tv-shell{min-height:570px}}
+
+
+  /* ADX pane resize grip; placed above the plot so drawing remains usable. */
+  #swift-adx-resizer{position:absolute;top:-6px;left:0;right:0;height:13px;z-index:12;cursor:ns-resize;touch-action:none;display:flex;justify-content:center;align-items:center}
+  #swift-adx-resizer span{display:block;width:110px;height:7px;border-radius:6px;background:#54718e;border:1px solid #8da6bf;box-shadow:0 0 0 2px #070b12}
+  #swift-adx-resizer::after{content:"DRAG UP TO ENLARGE ADX ↑";position:absolute;top:-19px;left:50%;transform:translateX(-50%);font:700 9px Courier New,monospace;color:#7dd3fc;white-space:nowrap;pointer-events:none}
+  #swift-adx-bottom-resizer{position:absolute;bottom:0;left:0;right:0;height:16px;z-index:12;cursor:ns-resize;touch-action:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(transparent,#132438)}
+  #swift-adx-bottom-resizer span{width:110px;height:5px;border-radius:6px;background:#54718e;border:1px solid #8da6bf}
+  #swift-adx-bottom-resizer:hover span{background:#38bdf8}
+  #swift-adx-resizer:hover span,#swift-adx-resizer:focus-visible span{background:#38bdf8}
+  body.swift-adx-resizing,body.swift-adx-resizing *{cursor:ns-resize!important;user-select:none!important}
+
+/* Hide Options Swift AI overlay without changing calculations or chart logic. */
+#os-ai-panel{display:block!important;width:260px;max-width:calc(100% - 78px)}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="hdr">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span class="logo">SPY FLOW</span>
+    <span id="mode-badge" class="badge bw">CONNECTING</span>
+    <span id="opt-ws-badge" class="badge" style="display:none;background:rgba(167,139,250,.14);color:#a78bfa;border:1px solid rgba(167,139,250,.3)">OPT STREAM OFF</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <button id="demo-toggle" class="btn demo-toggle" type="button" data-onclick="toggleDemoMode()" aria-pressed="false">Demo: OFF</button>
+    <span id="status-txt" class="mono" style="font-size:8px;color:var(--dim)">connecting to server…</span>
+    <span id="spin" style="display:none;font-family:'Courier New',monospace;font-size:9px;color:var(--accent)">⟳</span>
+    <span class="mono" style="font-size:9px;color:var(--text)"><span class="blink" style="color:var(--green)">●</span> <span id="clk"></span></span>
+    <button class="btn" id="chg-key-btn" data-onclick="showGate()" style="display:none;font-size:8px;padding:3px 8px">SERVER</button>
+  </div>
+</div>
+
+<!-- SERVER CONNECTION GATE -->
+<div id="key-gate">
+  <div class="kcard">
+    <h2>SECURE MARKET DATA SERVER</h2>
+    <p>
+      Credentials are managed by the Node.js server and are never sent to this browser.<br>
+      Reopen this dashboard from the PHP application if your session has expired.
+    </p>
+    <div class="kerr" id="kerr"></div>
+    <button class="kbtn" id="kbtn" data-onclick="tryConnect()">RETRY CONNECTION</button>
+  </div>
+</div>
+
+<!-- MAIN DASHBOARD -->
+<div id="main">
+
+  <!-- stat strip -->
+  <div class="strip">
+    <div class="stat"><div class="sl">SPY</div><div class="sv" id="spy-v" style="color:var(--dim)">—</div><div class="ss" id="spy-c"></div><div class="mono" id="spy-src" style="font-size:8px;color:var(--dim);margin-top:2px">connecting…</div></div>
+    <div class="stat" style="flex:1;min-width:180px">
+      <div class="sl">EXPIRY</div>
+      <input id="expiry-select" class="expiry-select" type="date" aria-label="Select option expiration date" data-onchange="changeExpiration(this.value)"/>
+      <div class="ss" id="expiry-note" style="color:var(--dim)">Select an active SPY expiration</div>
+    </div>
+    <div class="stat" style="min-width:100px">
+      <div class="sl">CONTRACTS</div>
+      <div class="sv" id="ct-v" style="font-size:18px">—</div>
+      <div class="ss" id="ct-s" style="color:var(--dim)"></div>
+    </div>
+  </div>
+
+  <!-- sim control bar -->
+  <div id="sim-bar" style="display:none;background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.25);border-radius:6px;padding:9px 14px;align-items:center;gap:10px;flex-wrap:wrap">
+    <span class="mono" style="font-size:9px;color:#a78bfa;letter-spacing:2px">◈ SIMULATION</span>
+    <span class="mono" style="font-size:8px;color:var(--dim)">SCENARIO</span>
+    <button class="btn on" id="sc-bull"  data-onclick="setScenario('bull')"  style="font-size:8px;padding:3px 8px;border-color:#34d399;background:rgba(52,211,153,.12);color:#34d399">BULL RUN</button>
+    <button class="btn"    id="sc-bear"  data-onclick="setScenario('bear')"  style="font-size:8px;padding:3px 8px">BEAR DROP</button>
+    <button class="btn"    id="sc-chop"  data-onclick="setScenario('chop')"  style="font-size:8px;padding:3px 8px">CHOP</button>
+    <button class="btn"    id="sc-spike" data-onclick="setScenario('spike')" style="font-size:8px;padding:3px 8px">VOL SPIKE</button>
+    <span class="mono" style="font-size:8px;color:var(--dim);margin-left:4px">SPEED</span>
+    <button class="btn on" id="sp-1" data-onclick="setSimSpeed(1)"  style="font-size:8px;padding:3px 8px;border-color:var(--accent);background:rgba(56,189,248,.12);color:var(--accent)">1×</button>
+    <button class="btn"    id="sp-2" data-onclick="setSimSpeed(2)"  style="font-size:8px;padding:3px 8px">2×</button>
+    <button class="btn"    id="sp-5" data-onclick="setSimSpeed(5)"  style="font-size:8px;padding:3px 8px">5×</button>
+    <span class="mono" id="sim-move" style="font-size:10px;font-weight:700;margin-left:4px">—</span>
+    <span class="mono" id="sim-elapsed" style="font-size:8px;color:var(--dim)"></span>
+  </div>
+
+  <!-- signal box -->
+  <div id="signal-box" style="background:var(--panel)">
+    <div style="min-width:180px">
+      <div class="sig-dir" id="sig-dir">—</div>
+      <div class="sig-sub" id="sig-sub">awaiting data</div>
+      <div class="sig-str" id="sig-str"></div>
+    </div>
+    <div class="sig-bars">
+      <div class="bar-row"><span class="bar-lbl">VOL IMBALANCE</span><div class="bar-track"><div class="bar-fill" id="b-vol"></div></div><span class="bar-val" id="bv-vol">—</span></div>
+      <div class="bar-row"><span class="bar-lbl">PREM IMBALANCE</span><div class="bar-track"><div class="bar-fill" id="b-prem"></div></div><span class="bar-val" id="bv-prem">—</span></div>
+      <div class="bar-row"><span class="bar-lbl">NET DELTA FLOW</span><div class="bar-track"><div class="bar-fill" id="b-delta"></div></div><span class="bar-val" id="bv-delta">—</span></div>
+      <div class="bar-row"><span class="bar-lbl">OI IMBALANCE</span><div class="bar-track"><div class="bar-fill" id="b-oi"></div></div><span class="bar-val" id="bv-oi">—</span></div>
+      <div class="bar-row"><span class="bar-lbl">P/C RATIO</span><div class="bar-track"><div class="bar-fill" id="b-pc"></div></div><span class="bar-val" id="bv-pc">—</span></div>
+    </div>
+  </div>
+
+  <!-- plan / error notices -->
+  <div class="plan-box" id="plan-box">
+    <b style="color:var(--accent)">⚠ OPTIONS PLAN REQUIRED</b> — Your key can't access the option chain snapshot.<br>
+    Options Starter (~$29/mo) for 15-min delay · Options Advanced (~$199/mo) for real-time.<br>
+    Upgrade → <a href="https://massive.com/pricing" target="_blank" rel="noopener noreferrer">massive.com/pricing</a>
+  </div>
+  <div id="errbox"></div>
+
+  <!-- tabs -->
+  <div class="tabs">
+    <button class="btn tab-switch-btn on" data-onclick="switchTab(this,'imbalance')">imbalance</button>
+    <button class="btn tab-switch-btn"    data-onclick="switchTab(this,'flow')">flow tape</button>
+    <button class="btn tab-switch-btn"    data-onclick="switchTab(this,'premium');openPremiumWindow()">premium ↗</button>
+    <button class="btn tab-switch-btn"    data-onclick="switchTab(this,'chart');openChartWindow()">chart ↗</button>
+    <div style="margin-left:auto;display:flex;gap:4px">
+      <button class="btn g on" id="ar-btn" data-onclick="toggleAR()">● LIVE</button>
+      <button class="btn" style="color:var(--accent);border-color:rgba(56,189,248,.4)" data-onclick="fetchAll()">↻</button>
+    </div>
+  </div>
+
+  <!-- ══ IMBALANCE TAB ══ -->
+  <div id="tc-imbalance" class="tc on">
+
+    <div class="panel">
+      <div class="slbl">CALL / PUT VOLUME METER</div>
+      <div class="meter-track">
+        <div class="meter-l" id="m-put"></div>
+        <div class="meter-r" id="m-call"></div>
+        <div class="meter-mid"></div>
+      </div>
+      <div class="meter-labels">
+        <span style="color:var(--red)">◀ PUT HEAVY</span>
+        <span style="color:var(--dim)">BALANCED</span>
+        <span style="color:var(--green)">CALL HEAVY ▶</span>
+      </div>
+    </div>
+
+        <div class="panel">
+      <div class="slbl">STRIKE-LEVEL IMBALANCE · CALLS vs PUTS</div>
+      <div style="display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:8px;color:var(--dim);margin-bottom:8px">
+        <span style="color:var(--red)">◀ PUTS</span><span>STRIKE</span><span style="color:var(--green)">CALLS ▶</span>
+      </div>
+      <div id="strike-ladder" style="max-height:360px;overflow-y:auto"></div>
+    </div>
+
+    <!-- CALL INTELLIGENCE removed from the dashboard -->
+    <div class="panel" hidden aria-hidden="true">
+      <div class="slbl">CALL INTELLIGENCE</div>
+      <div class="grid2">
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">CALL WALL &#x1F9F1;</div>
+          <div class="mono" id="ci-wall" style="font-size:18px;font-weight:700;color:var(--green)">&#8212;</div>
+          <div class="mono" id="ci-wall-sub" style="font-size:8px;color:var(--dim)">max OI strike</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">CALL SWEEPS &#x26A1;</div>
+          <div class="mono" id="ci-sweeps" style="font-size:18px;font-weight:700;color:var(--amber)">&#8212;</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">vol/OI &#x2265; 2&#xD7;</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">WA CALL STRIKE</div>
+          <div class="mono" id="ci-wastr" style="font-size:18px;color:var(--green)">&#8212;</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">vol-weighted center</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">AVG CALL IV</div>
+          <div class="mono" id="ci-iv" style="font-size:18px;color:var(--amber)">&#8212;</div>
+          <div class="mono" id="ci-iv-sub" style="font-size:8px;color:var(--dim)">vol-weighted</div>
+        </div>
+      </div>
+      <div style="margin-top:13px;padding-top:10px;border-top:1px solid var(--border)">
+        <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:7px">TOP CALL OI STRIKES</div>
+        <div id="ci-top-oi"></div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:7px">TOP 3 AGGREGATE ASK &#x1F4D8;</div>
+        <div id="ci-top-ask"></div>
+      </div>
+      <div id="ci-sweep-box" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none">
+        <div class="mono" style="font-size:8px;color:var(--amber);letter-spacing:2px;margin-bottom:6px">&#x26A1; ACTIVE SWEEPS (VOL/OI &#x2265; 2&#xD7;)</div>
+        <div id="ci-sweep-list"></div>
+      </div>
+    </div>
+
+    <!-- PUT INTELLIGENCE removed from the dashboard -->
+    <div class="panel" hidden aria-hidden="true">
+      <div class="slbl">PUT INTELLIGENCE</div>
+      <div class="grid2">
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">PUT WALL 🧱</div>
+          <div class="mono" id="pi-wall" style="font-size:18px;font-weight:700;color:var(--red)">—</div>
+          <div class="mono" id="pi-wall-sub" style="font-size:8px;color:var(--dim)">max OI strike</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">PUT SWEEPS ⚡</div>
+          <div class="mono" id="pi-sweeps" style="font-size:18px;font-weight:700;color:var(--amber)">—</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">vol/OI ≥ 2×</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">WA PUT STRIKE</div>
+          <div class="mono" id="pi-wastr" style="font-size:18px;color:var(--red)">—</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">vol-weighted center</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">AVG PUT IV</div>
+          <div class="mono" id="pi-iv" style="font-size:18px;color:var(--amber)">—</div>
+          <div class="mono" id="pi-iv-sub" style="font-size:8px;color:var(--dim)">vol-weighted</div>
+        </div>
+      </div>
+
+      <!-- TOP PUT OI STRIKES BAR CHART -->
+      <div style="margin-top:13px;padding-top:10px;border-top:1px solid var(--border)">
+        <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:7px">TOP PUT OI STRIKES</div>
+        <div id="pi-top-oi"></div>
+      </div>
+
+      <!-- TOP 3 AGGREGATE ASK -->
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:7px">TOP 3 AGGREGATE ASK &#x1F4D8;</div>
+        <div id="pi-top-ask"></div>
+      </div>
+
+      <!-- PUT SWEEPS LIST -->
+      <div id="pi-sweep-box" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none">
+        <div class="mono" style="font-size:8px;color:var(--amber);letter-spacing:2px;margin-bottom:6px">⚡ ACTIVE SWEEPS (VOL/OI ≥ 2×)</div>
+        <div id="pi-sweep-list"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="slbl">CALL vs PUT VOLUME BY STRIKE (TOP 16)</div>
+      <div class="chart-m"><canvas id="strike-c"></canvas></div>
+    </div>
+
+  </div>
+
+  <!-- ══ FLOW TAPE TAB ══ -->
+  <div id="tc-flow" class="tc">
+    <div class="panel" style="padding:0">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+        <div class="slbl" id="pressure-title">INDIVIDUAL ORDER PRESSURE (EACH EXECUTED PRINT &ge; $100K)</div>
+        <div class="mono" style="font-size:8px;color:var(--dim)">30-minute pressure · live NBBO classification · multi-leg/late prints remain UNCLEAR</div>
+        <div class="pressure-controls">
+          <label for="pressure-premium-filter" class="mono" style="font-size:8px;color:var(--text);letter-spacing:1px">MINIMUM PREMIUM</label>
+          <select id="pressure-premium-filter" class="pressure-select" data-onchange="setPressurePremiumFilter(this.value)">
+            <option value="0">ALL PRINTS</option>
+            <option value="75000">&ge; $75K</option>
+            <option value="100000">&ge; $100K</option>
+            <option value="150000">&ge; $150K</option>
+            <option value="200000">&ge; $200K</option>
+            <option value="300000">&ge; $300K</option>
+            <option value="400000">&ge; $400K</option>
+            <option value="500000">&ge; $500K</option>
+          </select>
+          <span id="pressure-bg-status" class="mono" style="font-size:8px;color:var(--green)">● BACKGROUND BUFFER ON</span>
+        </div>
+      </div>
+      <div class="pressure-summary" id="pressure-summary">
+        <span style="color:var(--dim)">Waiting for live $100K+ option prints…</span>
+      </div>
+      <div class="pressure-head"><span>TIME ET</span><span>DIRECTION</span><span>TYPE</span><span>STRIKE</span><span>FILL</span><span>PREMIUM</span><span>SIZE</span><span>BID</span><span>ASK</span><span>MARK</span><span>EXEC</span><span>P&amp;L</span><span>INST. SCORE</span><span>QUALITY</span></div>
+      <div class="pressure-scroll" id="pressure-body"><div class="fempty">Waiting for matching individual option trades…</div></div>
+    </div>
+
+    <div class="panel" style="padding:0">
+      <div class="ctrls">
+        <span class="mono" style="font-size:8px;color:var(--dim);letter-spacing:2px">TYPE</span>
+        <button class="btn g on" id="ct-all"  data-onclick="setCt('all')">ALL</button>
+        <button class="btn g"    id="ct-call" data-onclick="setCt('call')">CALLS</button>
+        <button class="btn r"    id="ct-put"  data-onclick="setCt('put')">PUTS</button>
+        <span class="mono" style="font-size:8px;color:var(--dim);letter-spacing:2px;margin-left:6px">SORT</span>
+        <button class="btn on" id="sv" data-onclick="setSrt('time')">TIME</button>
+        <button class="btn"    id="sp" data-onclick="setSrt('premium')">PREM$</button>
+        <button class="btn"    id="ss" data-onclick="setSrt('size')">SIZE</button>
+        <button class="btn a"  id="sw" data-onclick="setSrt('whale')">🐋 WHALES</button>
+        <span class="mono" style="font-size:8px;color:#22d3ee;letter-spacing:2px;margin-left:6px">VIEW</span>
+        <select id="tape-view-mode" data-onchange="setTapeViewMode(this.value)"
+                style="background:#04060c;border:1px solid rgba(34,211,238,.35);border-radius:3px;color:#22d3ee;font-family:'Courier New',monospace;font-size:9px;padding:3px 7px;outline:none">
+          <option value="grouped">LARGE ORDERS</option>
+          <option value="raw">RAW PRINTS</option>
+        </select>
+        <span class="mono" style="font-size:8px;color:var(--amber);letter-spacing:2px;margin-left:6px">PREMIUM</span>
+        <select id="tape-premium-filter" data-onchange="setTapePremium(this.value)"
+                style="background:#04060c;border:1px solid rgba(251,191,36,.35);border-radius:3px;color:var(--amber);font-family:'Courier New',monospace;font-size:9px;padding:3px 7px;outline:none">
+          <option value="0">ALL</option>
+          <option value="50000">≥ $50K</option>
+          <option value="100000">≥ $100K</option>
+          <option value="200000">≥ $200K</option>
+          <option value="300000">≥ $300K</option>
+          <option value="500000">≥ $500K</option>
+          <option value="1000000">≥ $1M</option>
+          <option value="custom">CUSTOM</option>
+        </select>
+        <input type="number" id="tape-premium-custom" min="0" step="10000" placeholder="$ amount"
+               data-oninput="setTapePremiumCustom(this.value)"
+               style="display:none;width:86px;background:#04060c;border:1px solid rgba(251,191,36,.35);border-radius:3px;color:var(--amber);font-family:'Courier New',monospace;font-size:9px;padding:3px 6px;outline:none"/>
+        <span class="mono" style="font-size:8px;color:#60a5fa;letter-spacing:2px;margin-left:6px">STATUS</span>
+        <select id="tape-status-filter" data-onchange="setTapeStatusFilter(this.value)"
+                style="background:#04060c;border:1px solid rgba(96,165,250,.35);border-radius:3px;color:#60a5fa;font-family:'Courier New',monospace;font-size:9px;padding:3px 7px;outline:none">
+          <option value="all">ALL 30 MIN</option>
+          <option value="active">ACTIVE</option>
+          <option value="winner">WINNERS</option>
+          <option value="loser">LOSERS</option>
+          <option value="stale">STALE</option>
+          <option value="possible_exit">POSSIBLE EXIT</option>
+        </select>
+        <span class="mono" style="font-size:8px;color:#a78bfa;letter-spacing:2px;margin-left:6px">WS RANGE</span>
+        <input type="number" id="ws-range-input" value="10" min="1" max="200" step="1"
+               data-onchange="setWsRange(this.value)"
+               style="width:46px;background:#04060c;border:1px solid rgba(167,139,250,.3);border-radius:3px;color:#a78bfa;font-family:'Courier New',monospace;font-size:9px;padding:3px 5px;text-align:center;outline:none"/>
+        <span class="mono" style="font-size:8px;color:var(--dim)">±$ from SPY</span>
+        <button class="btn" id="ws-range-all" data-onclick="setWsRange(0)" style="font-size:8px;padding:3px 8px">ALL</button>
+        <button class="btn" id="ws-dbg-btn" data-onclick="toggleWsDebug()" style="font-size:8px;padding:3px 8px;color:#a78bfa;border-color:rgba(167,139,250,.3)">⚙ DBG</button>
+        <button class="btn" style="margin-left:auto;color:var(--red);border-color:rgba(248,113,113,.3);font-size:8px" data-onclick="clearTape()">✕ CLEAR</button>
+        <span class="mono" id="rct" style="font-size:8px;color:var(--dim)">— prints</span>
+      </div>
+      <div class="tape-status">
+        <span id="tape-info" style="color:var(--dim)">live WebSocket prints · EXEC shows ASK BUY/BID SELL · EXIT PX is bid for buyers or ask for sellers · MARK is midpoint · * = stale quote</span>
+        <span id="tape-whale-ct" style="color:var(--amber)"></span>
+      </div>
+      <div id="ws-debug-panel" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:rgba(167,139,250,.04);max-height:220px;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span class="mono" style="font-size:8px;color:#a78bfa;letter-spacing:2px">⚙ RAW WS FRAMES (LAST 20)</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn" data-onclick="clearWsDebug()" style="font-size:8px;padding:2px 6px">CLEAR</button>
+            <button class="btn" data-onclick="toggleWsDebug()" style="font-size:8px;padding:2px 6px">✕ CLOSE</button>
+          </div>
+        </div>
+        <div id="ws-debug-log" style="font-family:'Courier New',monospace;font-size:9px;color:var(--text);line-height:1.5"></div>
+      </div>
+      <div class="thdr"><span>TIME ET</span><span></span><span>SIDE</span><span>STRIKE</span><span>FILL</span><span>SIZE</span><span>PREMIUM</span><span>PRINTS</span><span>TYPE</span><span>Δ</span><span>EXEC</span><span>DIRECTION</span><span>MARK</span><span>EXIT PX</span><span>EST. SIDE P&amp;L</span><span>INST. SCORE</span><span>STATUS</span></div>
+      <div class="fscroll" id="fbody"><div class="fempty">Waiting for first refresh…<br><span style="font-size:9px;color:var(--dim)">Prints accumulate live as contracts trade</span></div></div>
+      <div id="tape-pager" style="display:none;align-items:center;justify-content:center;gap:8px;padding:8px 12px;border-top:1px solid var(--border);background:rgba(4,6,12,.82)">
+        <button class="btn" id="tape-newer-btn" data-onclick="changeTapePage(-1)" style="font-size:8px;padding:4px 10px">◀ NEWER</button>
+        <span class="mono" id="tape-page-info" style="min-width:220px;text-align:center;font-size:8px;color:var(--text)">PAGE 1</span>
+        <button class="btn" id="tape-older-btn" data-onclick="changeTapePage(1)" style="font-size:8px;padding:4px 10px">OLDER ▶</button>
+        <button class="btn" id="tape-latest-btn" data-onclick="goToLatestTapePage()" style="font-size:8px;padding:4px 10px;color:var(--green);border-color:rgba(52,211,153,.35)">LATEST</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ PREMIUM TAB ══ -->
+  <div id="tc-premium" class="tc">
+    <div class="premium-popout-bar">
+      <a id="premium-popout-link" class="btn" style="font-size:9px;text-decoration:none;display:inline-block" target="_blank" rel="noopener" href="#">⧉ POP OUT</a>
+    </div>
+    <div class="grid2" id="premium-top-row">
+      <div class="premium-top-left">
+      <div class="panel" style="margin:0">
+        <div class="slbl">PREMIUM DOLLAR IMBALANCE</div>
+        <div class="meter-track">
+          <div class="meter-l" id="pm-put"></div>
+          <div class="meter-r" id="pm-call"></div>
+          <div class="meter-mid"></div>
+        </div>
+        <div class="meter-labels">
+          <span style="color:var(--red)">◀ PUT $</span>
+          <span style="color:var(--dim)">BALANCED</span>
+          <span style="color:var(--green)">CALL $ ▶</span>
+        </div>
+      </div>
+
+      <div class="prem-row">
+      <div class="prem-side" style="border-color:rgba(52,211,153,.25);background:rgba(52,211,153,.04)">
+        <div class="mono" style="font-size:9px;letter-spacing:2px;color:var(--green)">&#9650; CALL PREMIUM</div>
+        <div class="mono" id="cp-total" style="font-size:22px;font-weight:700;color:var(--green);margin-top:4px">&#8212;</div>
+        <div class="mono" id="cp-ct" style="font-size:9px;color:var(--text);margin-top:3px"></div>
+        <div class="mono" id="cp-avg" style="font-size:9px;color:var(--dim)"></div>
+        <div style="margin-top:11px;padding-top:9px;border-top:1px solid rgba(52,211,153,.15)">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:5px">CALL WALLS &#x1F9F1;</div>
+          <div style="margin-top:7px;padding-top:6px;border-top:1px dashed rgba(52,211,153,.16)">
+            <div class="mono" style="font-size:7px;color:var(--dim);letter-spacing:1px">LIVE PREMIUM WALL</div>
+            <div class="mono" id="cw-live" style="font-size:12px;font-weight:700;color:var(--green)">&#8212;</div>
+            <div class="mono" id="cw-live-sub" style="font-size:8px;color:var(--dim)">aggressive ask-buy premium</div>
+          </div>
+          <div style="margin-top:7px;padding-top:6px;border-top:1px dashed rgba(52,211,153,.16)">
+            <div class="mono" style="font-size:7px;color:var(--dim);letter-spacing:1px">GEX WALL</div>
+            <div class="mono" id="cw-gex" style="font-size:12px;font-weight:700;color:var(--green)">&#8212;</div>
+            <div class="mono" id="cw-gex-sub" style="font-size:8px;color:var(--dim)">gamma × OI by strike</div>
+          </div>
+          <div style="margin-top:7px;padding-top:6px;border-top:1px dashed rgba(52,211,153,.16)">
+            <div class="mono" style="font-size:7px;color:var(--dim);letter-spacing:1px">PRESSURE WALL</div>
+            <div class="mono" id="cw-pressure" style="font-size:12px;font-weight:700;color:var(--green)">&#8212;</div>
+            <div class="mono" id="cw-pressure-sub" style="font-size:8px;color:var(--dim)">ask-buy premium − bid-sell premium</div>
+          </div>
+        </div>
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">WACP &#183; WA STRIKE</div>
+          <div class="mono" id="cp-wacp" style="font-size:11px;color:var(--green)">&#8212;</div>
+        </div>
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">ITM vs OTM VOL</div>
+          <div style="height:7px;border-radius:4px;background:var(--dim);position:relative;overflow:hidden">
+            <div id="cp-itm-fill" style="position:absolute;left:0;top:0;height:100%;background:rgba(52,211,153,.8);border-radius:4px;transition:width .6s;width:0%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:3px">
+            <span class="mono" id="cp-itm" style="font-size:8px;color:var(--green)">ITM &#8212;</span>
+            <span class="mono" id="cp-otm" style="font-size:8px;color:var(--dim)">OTM &#8212;</span>
+          </div>
+        </div>
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">THETA BURN / DAY</div>
+          <div class="mono" id="cp-theta" style="font-size:12px;color:#a78bfa">&#8212;</div>
+        </div>
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">LARGEST BLOCK</div>
+          <div class="mono" id="cp-largest" style="font-size:11px;color:var(--amber)">&#8212;</div>
+        </div>
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">AVG CALL IV</div>
+          <div class="mono" id="cp-iv" style="font-size:12px;color:var(--amber)">&#8212;</div>
+          <div class="mono" id="cp-iv-sub" style="font-size:8px;color:var(--dim)"></div>
+        </div>
+      </div>
+      <div class="prem-side" style="border-color:rgba(248,113,113,.25);background:rgba(248,113,113,.04)">
+        <div class="mono" style="font-size:9px;letter-spacing:2px;color:var(--red)">▼ PUT PREMIUM</div>
+        <div class="mono" id="pp-total" style="font-size:22px;font-weight:700;color:var(--red);margin-top:4px">—</div>
+        <div class="mono" id="pp-ct" style="font-size:9px;color:var(--text);margin-top:3px"></div>
+        <div class="mono" id="pp-avg" style="font-size:9px;color:var(--dim)"></div>
+
+        <!-- PUT WALL -->
+        <div style="margin-top:11px;padding-top:9px;border-top:1px solid rgba(248,113,113,.15)">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:5px">PUT WALLS 🧱</div>
+          <div style="margin-top:7px;padding-top:6px;border-top:1px dashed rgba(248,113,113,.16)">
+            <div class="mono" style="font-size:7px;color:var(--dim);letter-spacing:1px">LIVE PREMIUM WALL</div>
+            <div class="mono" id="pw-live" style="font-size:12px;font-weight:700;color:var(--red)">—</div>
+            <div class="mono" id="pw-live-sub" style="font-size:8px;color:var(--dim)">aggressive ask-buy premium</div>
+          </div>
+          <div style="margin-top:7px;padding-top:6px;border-top:1px dashed rgba(248,113,113,.16)">
+            <div class="mono" style="font-size:7px;color:var(--dim);letter-spacing:1px">GEX WALL</div>
+            <div class="mono" id="pw-gex" style="font-size:12px;font-weight:700;color:var(--red)">—</div>
+            <div class="mono" id="pw-gex-sub" style="font-size:8px;color:var(--dim)">gamma × OI by strike</div>
+          </div>
+          <div style="margin-top:7px;padding-top:6px;border-top:1px dashed rgba(248,113,113,.16)">
+            <div class="mono" style="font-size:7px;color:var(--dim);letter-spacing:1px">PRESSURE WALL</div>
+            <div class="mono" id="pw-pressure" style="font-size:12px;font-weight:700;color:var(--red)">—</div>
+            <div class="mono" id="pw-pressure-sub" style="font-size:8px;color:var(--dim)">ask-buy premium − bid-sell premium</div>
+          </div>
+        </div>
+
+        <!-- WAPP / WA STRIKE -->
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">WAPP · WA STRIKE</div>
+          <div class="mono" id="pp-wapp" style="font-size:11px;color:var(--red)">—</div>
+        </div>
+
+        <!-- ITM vs OTM bar -->
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">ITM vs OTM VOL</div>
+          <div style="height:7px;border-radius:4px;background:var(--dim);position:relative;overflow:hidden">
+            <div id="pp-itm-fill" style="position:absolute;left:0;top:0;height:100%;background:rgba(248,113,113,.8);border-radius:4px;transition:width .6s;width:0%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:3px">
+            <span class="mono" id="pp-itm" style="font-size:8px;color:var(--red)">ITM —</span>
+            <span class="mono" id="pp-otm" style="font-size:8px;color:var(--dim)">OTM —</span>
+          </div>
+        </div>
+
+        <!-- THETA BURN -->
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">THETA BURN / DAY</div>
+          <div class="mono" id="pp-theta" style="font-size:12px;color:#a78bfa">—</div>
+        </div>
+
+        <!-- LARGEST BLOCK -->
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">LARGEST BLOCK</div>
+          <div class="mono" id="pp-largest" style="font-size:11px;color:var(--amber)">—</div>
+        </div>
+
+        <!-- AVG PUT IV -->
+        <div style="margin-top:9px">
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:2px">AVG PUT IV</div>
+          <div class="mono" id="pp-iv" style="font-size:12px;color:var(--amber)">—</div>
+          <div class="mono" id="pp-iv-sub" style="font-size:8px;color:var(--dim)"></div>
+        </div>
+      </div>
+      </div>
+      </div>
+      <div class="panel" id="gex-ratio-panel" style="margin:0">
+        <div class="gex-ratio-head">
+          <div>
+            <div class="gex-ratio-title">GEX RATIO HISTOGRAM · LIVE</div>
+            <div class="gex-ratio-sub">Narrow bars · green above 0 = SPY moved up · red below 0 = SPY moved down · bar height = GEX-ratio strength · 20-sample Bollinger Bands</div>
+          </div>
+          <select id="gex-ratio-interval" class="pressure-select" aria-label="GEX ratio candle interval" data-onchange="setGexRatioInterval(this.value)">
+            <option value="60000">1 min</option>
+            <option value="180000">3 min</option>
+            <option value="300000">5 min</option>
+            <option value="900000">15 min</option>
+          </select>
+          <div class="gex-ratio-time" id="gex-ratio-time">RATIO UPDATED —</div>
+        </div>
+        <div class="gex-ratio-chart"><canvas id="gex-ratio-c"></canvas></div>
+        <div class="gex-ratio-stats">
+          <div class="gex-ratio-stat"><div class="k">CURRENT GEX RATIO</div><div class="v" id="gexr-current">—</div></div>
+          <div class="gex-ratio-stat"><div class="k">BB UPPER</div><div class="v" id="gexr-upper" style="color:#c084fc">—</div></div>
+          <div class="gex-ratio-stat"><div class="k">BB MID</div><div class="v" id="gexr-mid" style="color:#fbbf24">—</div></div>
+          <div class="gex-ratio-stat"><div class="k">BB LOWER</div><div class="v" id="gexr-lower" style="color:#c084fc">—</div></div>
+          <div class="gex-ratio-stat"><div class="k">HISTORY</div><div class="v" id="gexr-count">0</div></div>
+        </div>
+        <div class="gex-ratio-status" id="gex-ratio-status">Waiting for gamma + open-interest data from the selected option chain…</div>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:0">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border)"><div class="slbl" id="wh-lbl">🐋 WHALE BLOCKS ≥$500K</div></div>
+      <div class="fhdr"><span></span><span>SIDE</span><span>STRIKE</span><span>LAST</span><span>PREM$</span><span>VOL</span><span>OI</span><span>IV</span><span>V/OI</span><span>Δ</span></div>
+      <div class="fscroll" id="wh-body"><div class="fempty">No whale blocks yet</div></div>
+    </div>
+
+    <div class="panel" hidden aria-hidden="true">
+      <div class="slbl">NET DELTA EXPOSURE</div>
+      <div class="grid2">
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">CALL DELTA FLOW</div><div class="mono" id="nd-call" style="font-size:18px;color:var(--green)">—</div><div class="mono" id="nd-cs" style="font-size:9px;color:var(--dim)"></div></div>
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">PUT DELTA FLOW</div><div class="mono" id="nd-put" style="font-size:18px;color:var(--red)">—</div><div class="mono" id="nd-ps" style="font-size:9px;color:var(--dim)"></div></div>
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">NET DELTA</div><div class="mono" id="nd-net" style="font-size:22px;font-weight:700">—</div><div class="mono" id="nd-bias" style="font-size:9px;margin-top:3px"></div></div>
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">GAMMA EXPOSURE</div><div class="mono" id="nd-gamma" style="font-size:18px;color:var(--purple)">—</div><div class="mono" id="nd-gs" style="font-size:9px;color:var(--dim)">total gamma</div></div>
+      </div>
+    </div>
+
+    <!-- NET GEX removed from the dashboard -->
+    <div class="panel" hidden aria-hidden="true">
+      <div class="slbl">NET GEX · DEALER GAMMA EXPOSURE</div>
+      <div class="grid2" style="margin-bottom:14px">
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">NET GEX $</div>
+          <div class="mono" id="gex-net" style="font-size:22px;font-weight:700">—</div>
+          <div class="mono" id="gex-net-sub" style="font-size:8px;margin-top:3px">—</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">REGIME</div>
+          <div class="mono" id="gex-regime" style="font-size:14px;font-weight:700;margin-bottom:4px">—</div>
+          <div class="mono" id="gex-regime-sub" style="font-size:8px;color:var(--dim);line-height:1.6">—</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">CALL GEX</div>
+          <div class="mono" id="gex-call" style="font-size:16px;color:var(--green)">—</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">dealers long γ calls</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">PUT GEX</div>
+          <div class="mono" id="gex-put" style="font-size:16px;color:var(--red)">—</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">dealers short γ puts</div>
+        </div>
+      </div>
+      <!-- GEX by strike -->
+      <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:8px">GEX BY STRIKE · GAMMA WALLS</div>
+      <div style="display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:8px;color:var(--dim);margin-bottom:6px">
+        <span style="color:var(--red)">◀ PUT GEX</span><span>STRIKE</span><span style="color:var(--green)">CALL GEX ▶</span>
+      </div>
+      <div id="gex-ladder" style="max-height:320px;overflow-y:auto"></div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;gap:18px;flex-wrap:wrap">
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:3px">LARGEST CALL GAMMA WALL</div><div class="mono" id="gex-cwall" style="font-size:13px;color:var(--green)">—</div></div>
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:3px">LARGEST PUT GAMMA WALL</div><div class="mono" id="gex-pwall" style="font-size:13px;color:var(--red)">—</div></div>
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:3px">GEX FLIP POINT</div><div class="mono" id="gex-flip" style="font-size:13px;color:var(--accent)">—</div></div>
+      </div>
+    </div>
+
+    <!-- NET VEX removed from the dashboard -->
+    <div class="panel" hidden aria-hidden="true">
+      <div class="slbl">NET VEX · DEALER VEGA EXPOSURE</div>
+      <div class="grid2" style="margin-bottom:14px">
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">NET VEX $ / 1% IV</div>
+          <div class="mono" id="vex-net" style="font-size:22px;font-weight:700">—</div>
+          <div class="mono" id="vex-net-sub" style="font-size:8px;margin-top:3px">—</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">REGIME</div>
+          <div class="mono" id="vex-regime" style="font-size:14px;font-weight:700;margin-bottom:4px">—</div>
+          <div class="mono" id="vex-regime-sub" style="font-size:8px;color:var(--dim);line-height:1.6">—</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">CALL VEX</div>
+          <div class="mono" id="vex-call" style="font-size:16px;color:var(--green)">—</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">upside vol exposure</div>
+        </div>
+        <div>
+          <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:4px">PUT VEX</div>
+          <div class="mono" id="vex-put" style="font-size:16px;color:var(--red)">—</div>
+          <div class="mono" style="font-size:8px;color:var(--dim)">downside vol exposure</div>
+        </div>
+      </div>
+      <!-- VEX by strike -->
+      <div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:8px">VEX BY STRIKE · VEGA WALLS</div>
+      <div style="display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:8px;color:var(--dim);margin-bottom:6px">
+        <span style="color:var(--red)">◀ PUT VEX</span><span>STRIKE</span><span style="color:var(--green)">CALL VEX ▶</span>
+      </div>
+      <div id="vex-ladder" style="max-height:320px;overflow-y:auto"></div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;gap:18px;flex-wrap:wrap">
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:3px">LARGEST CALL VEGA WALL</div><div class="mono" id="vex-cwall" style="font-size:13px;color:var(--green)">—</div></div>
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:3px">LARGEST PUT VEGA WALL</div><div class="mono" id="vex-pwall" style="font-size:13px;color:var(--red)">—</div></div>
+        <div><div class="mono" style="font-size:8px;color:var(--text);letter-spacing:2px;margin-bottom:3px">TOTAL VEGA NOTIONAL</div><div class="mono" id="vex-total" style="font-size:13px;color:var(--accent)">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TRADING CHART TAB ══ -->
+  <div id="tc-chart" class="tc">
+    <div class="tv-shell">
+      <div class="tv-toolbar">
+        <span class="badge demo-badge tv-demo-label" hidden>DEMO · MOCK DATA</span>
+        <span class="tv-symbol">SPY</span><span id="tv-live-price" class="tv-live">—</span><span class="os-chart-badge">OPTIONS SWIFT CANVAS</span>
+        <span class="tv-divider"></span>
+        <button class="tv-btn on" data-tf="1" data-onclick="setChartTimeframe(1,this)">1m</button>
+        <button class="tv-btn" data-tf="3" data-onclick="setChartTimeframe(3,this)">3m</button>
+        <button class="tv-btn" data-tf="5" data-onclick="setChartTimeframe(5,this)">5m</button>
+        <button class="tv-btn" data-tf="15" data-onclick="setChartTimeframe(15,this)">15m</button>
+        <button class="tv-btn" data-tf="30" data-onclick="setChartTimeframe(30,this)">30m</button>
+        <button class="tv-btn" data-tf="60" data-onclick="setChartTimeframe(60,this)">1H</button>
+        <span class="tv-divider"></span>
+        <span class="tv-mode-group" role="group" aria-label="Candle type">
+          <button class="tv-btn on" data-chart-mode="candles" data-onclick="setChartMode('candles')" title="Standard OHLC candles">Candles</button>
+          <button class="tv-btn" data-chart-mode="heikin" data-onclick="setChartMode('heikin')" title="Heikin Ashi smoothed candles">Heikin Ashi</button>
+        </span>
+        <span class="tv-divider"></span>
+        <span class="tv-study"><button id="tv-vwap-btn" class="tv-btn on" data-onclick="toggleChartStudy('vwap',this)">VWAP</button><input class="tv-color" type="color" value="#38bdf8" aria-label="VWAP color" data-onchange="setStudyColor('vwap',this.value)"></span>
+        <span class="tv-study"><button id="tv-ema7-btn" class="tv-btn on" data-onclick="toggleChartStudy('ema7',this)">EMA 7</button><input class="tv-color" type="color" value="#84cc16" aria-label="EMA 7 color" data-onchange="setStudyColor('ema7',this.value)"></span>
+        <span class="tv-study"><button id="tv-ema9-btn" class="tv-btn on" data-onclick="toggleChartStudy('ema9',this)">EMA 9</button><input class="tv-color" type="color" value="#facc15" aria-label="EMA 9 color" data-onchange="setStudyColor('ema9',this.value)"></span>
+        <span class="tv-study"><button id="tv-ema21-btn" class="tv-btn on" data-onclick="toggleChartStudy('ema21',this)">EMA 21</button><input class="tv-color" type="color" value="#a78bfa" aria-label="EMA 21 color" data-onchange="setStudyColor('ema21',this.value)"></span>
+        <span class="tv-study"><button id="tv-ema200-btn" class="tv-btn on" data-onclick="toggleChartStudy('ema200',this)">EMA 200</button><input class="tv-color" type="color" value="#f97316" aria-label="EMA 200 color" data-onchange="setStudyColor('ema200',this.value)"></span>
+        <span class="tv-study"><button id="tv-bb-btn" class="tv-btn on" data-onclick="toggleChartStudy('bb',this)">Bollinger</button><input class="tv-color" type="color" value="#22d3ee" aria-label="Bollinger Bands color" data-onchange="setStudyColor('bb',this.value)"></span>
+        <button id="tv-level-btn" class="tv-btn on" data-onclick="toggleChartStudy('levels',this)">GEX Levels</button>
+        <button id="tv-profile-btn" class="tv-btn on" data-onclick="toggleChartStudy('profile',this)" title="Fixed volume profile for the candles currently visible on the chart">Volume Profile</button>
+        <span class="tv-study"><button id="tv-flowForce-btn" class="tv-btn on" data-onclick="toggleChartStudy('flowForce',this)" title="Flow Force = 100 × (Bull Force − Bear Force) / (Bull Force + Bear Force), where Trade Force = Premium × |Delta|. LIVE WS preferred; REST/NBBO fallback is labelled ESTIMATED.">Flow Force</button><select id="tv-flowforce-len" class="tv-flow-select" aria-label="Flow Force lookback bars" title="Flow Force calculation: Bar = each candle on its own, or a rolling lookback of N bars" data-onchange="setFlowForceLength(this.value)"><option value="1" selected>Bar</option><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="30">30</option></select></span>
+        <button id="swift-auto-di-btn" class="tv-btn on" data-onclick="toggleSwiftAutoDILines(this)" title="Automatically draw crossover lines when ADX is at least 18">Auto DI Cross ≥18</button>
+        <button id="tv-adx-btn" class="tv-btn on" data-onclick="toggleSwiftADX(this)" title="Wilder ADX 14 with +DI and -DI">ADX / DI 14</button>
+        <button id="tv-hammer-btn" class="tv-btn on" data-onclick="toggleHammerPatterns(this)" title="Mark detected completed candle patterns; zoom in to see labels. Patterns are not confirmed predictions.">All Candle Patterns</button>
+        <button id="tv-sd-btn" class="tv-btn on" data-onclick="toggleSupplyDemand(this)" title="Dynamic SPY supply and demand zones with strength scoring">S/D Zones</button>
+        <span class="tv-study"><button id="tv-bfly-btn" class="tv-btn on" data-onclick="toggleButterfly(this)" title="Auto-detect bullish / bearish harmonic Butterfly (XABCD): B ≈ 0.786 XA, C 0.382–0.886 AB, D 1.27–1.618 XA. Shows forming patterns with their PRZ before D completes.">Butterfly</button><select id="tv-bfly-scale" class="tv-flow-select" aria-label="Butterfly swing size" title="Swing size used to find X-A-B-C-D pivots" data-onchange="setButterflyScale(this.value)"><option value="auto">Auto</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></span>
+        <span class="tv-study"><button id="tv-flow-btn" class="tv-btn on" data-onclick="toggleChartStudy('flow',this)" title="Show or hide stored option-flow marks inside the price chart">Flow Marks</button><select id="tv-flow-premium-select" class="tv-flow-select" aria-label="Minimum flow-mark premium" data-onchange="setChartFlowMinPremium(this.value)"><option value="200000">$200K+</option><option value="300000">$300K+</option><option value="400000">$400K+</option><option value="500000">$500K+</option></select><select id="tv-flow-gap-select" class="tv-flow-select" aria-label="Flow mark distance from candle wicks" title="How far call/put flow marks sit from the candle wick ends" data-onchange="setFlowMarkGap(this.value)"><option value="10">Gap: Near</option><option value="22">Gap: Mid</option><option value="38">Gap: Far</option><option value="60">Gap: Max</option></select></span>
+        <select id="os-draw-tool" class="tv-flow-select" aria-label="Drawing tool" data-onchange="setCustomDrawTool(this.value)">
+          <option value="trend">Trend Line</option>
+          <option value="ray">Ray</option>
+          <option value="horizontal">Horizontal Line</option>
+          <option value="channel">Parallel Channel</option>
+          <option value="vertical">Vertical Line</option>
+        </select>
+        <button id="os-di-snap-btn" class="tv-btn on" data-onclick="toggleSwiftDISnap(this)" title="Off = draw at exact mouse position in DI panel. On = snap near DI intersections.">DI Cross Snap: Off</button>
+        <button id="os-draw-line-btn" class="tv-btn" data-onclick="toggleCustomDrawLine(this)" title="Turn the selected drawing tool on or off">Draw: Off</button>
+        <button id="os-draw-extend-btn" class="tv-btn on" data-onclick="toggleCustomTrendExtension(this)" title="Extend trend lines through both chart edges">Extend: On</button>
+        <button id="os-magnet-btn" class="tv-btn on" data-onclick="toggleCustomMagnet(this)" title="Snap drawing points to the nearest candle open, high, low, or close">Magnet: On</button>
+        <button id="os-eraser-btn" class="tv-btn" data-onclick="eraseSelectedDrawing()" title="Erase only the currently selected drawing" disabled>Erase Selected</button>
+        <button class="tv-btn" data-onclick="clearCustomDrawings()" title="Remove your hand-drawn chart lines">Clear Lines</button>
+        <button class="tv-btn" data-onclick="fitTradingChart()">Fit</button>
+        <button id="tv-live-follow-btn" class="tv-btn on" data-onclick="enableTradingChartLiveFollow()" title="Jump to the newest candle and resume automatic live following">● LIVE FOLLOW</button>
+        <select id="tv-background-select" class="tv-background-select" aria-label="Chart background color" title="Switch the price and volume charts between dark and white backgrounds" data-onchange="setChartBackground(this.value)">
+          <option value="dark">Dark Background</option>
+          <option value="white">White Background</option>
+        </select>
+        <button class="tv-btn" data-onclick="loadTradingChart(true)">↻</button>
+        <button class="tv-btn" data-onclick="openChartWindow()">NEW WINDOW ↗</button>
+        <span id="tv-chart-status" class="tv-status">Open chart to load live candles</span>
+      </div>
+      <div class="tv-chart-window-notice"><div>The live chart is running in its own browser window.<br>The embedded renderer is paused to reduce dashboard lag.</div><div class="tv-window-actions"><button class="tv-btn on" data-onclick="focusChartWindow()">FOCUS CHART WINDOW</button><button class="tv-btn" data-onclick="closeChartWindow()">RETURN CHART HERE</button></div></div>
+      <div class="tv-price-wrap" style="position:relative"><div id="tv-chart-watermark" class="tv-watermark tv-brand-watermark"><span class="tv-brand-name">OPTIONSWIFT</span><span class="tv-brand-meta">SPY · LIVE CANDLES · NEW YORK TIME</span></div><div id="tv-flow-label-layer" class="tv-flow-label-layer" aria-hidden="true"></div>
+<div id="os-ai-panel" class="os-ai-panel os-ai-wait" style="display:block!important">
+  <div class="os-ai-direction" style="margin-top:6px;padding-top:6px;border-top:1px solid #31547d;font:800 9px 'Courier New',monospace">
+    <div style="color:#7dd3fc;letter-spacing:1px">CANDLE + FLOW DIRECTION · EXPERIMENTAL</div>
+    <div id="os-ai-pattern" style="margin-top:4px;color:#cbd5e1">PATTERN: WAITING</div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px"><span id="os-ai-bull" style="color:#34d399">CALL —</span><span id="os-ai-bear" style="color:#f87171">PUT —</span></div>
+    <div id="os-ai-direction" style="margin-top:4px;color:#fbbf24">WAIT · NOT ENOUGH DATA</div>
+    <div id="os-ai-walls" style="margin-top:3px;color:#9fb4c8">WALLS: —</div>
+    <div id="os-ai-direction-note" style="margin-top:3px;color:#8298aa;font-size:8px;font-weight:400">Scores measure indicator alignment, not win probability.</div>
+  </div>
+</div>
+<div id="tv-main-chart"></div></div>
+      <!-- Volume pane is kept off-screen for internal candle/volume-series synchronization; not displayed. -->
+      <div class="tv-volume-wrap" aria-hidden="true"><div id="tv-volume-chart"></div></div>
+      <div id="swift-adx-pane" title="Drag the top divider to resize ADX/DI" style="height:450px;position:relative;border-top:1px solid #223149;background:#070b12"><div id="swift-adx-resizer" role="separator" aria-label="Resize ADX/DI panel" aria-orientation="horizontal" tabindex="0" title="Drag UP to enlarge ADX / DOWN to shrink · arrow keys also work"><span></span></div><div id="swift-adx-values" style="position:absolute;top:5px;left:12px;z-index:2;font:800 11px Courier New,monospace;color:#cbd5e1">ADX (14) · waiting for candles</div><canvas id="swift-adx-canvas" style="width:100%;height:100%;display:block"></canvas><div id="swift-adx-bottom-resizer" role="separator" aria-label="Resize ADX panel from bottom" aria-orientation="horizontal" tabindex="0" title="Drag down to enlarge ADX, up to shrink"><span></span></div></div>
+      <div class="tv-legend">
+        <span id="tv-candle-mode-note">Price: standard OHLC candles</span>
+        <span><i id="tv-dot-vwap" class="tv-dot" style="background:#38bdf8"></i>VWAP</span>
+        <span><i id="tv-dot-ema7" class="tv-dot" style="background:#84cc16"></i>EMA 7</span>
+        <span><i id="tv-dot-ema9" class="tv-dot" style="background:#facc15"></i>EMA 9</span>
+        <span><i id="tv-dot-ema21" class="tv-dot" style="background:#a78bfa"></i>EMA 21</span>
+        <span><i id="tv-dot-ema200" class="tv-dot" style="background:#f97316"></i>EMA 200</span>
+        <span><i id="tv-dot-bb" class="tv-dot" style="background:#22d3ee"></i>Bollinger Bands (20, 2)</span>
+        <span id="tv-flow-label-summary"><i class="tv-dot" style="background:#34d399"></i>≥$200K flow: waiting for captured prints</span>
+        <span id="tv-flow-storage-status" style="color:#fbbf24">● Loading persistent chart flow history…</span>
+        <span>Flow marks: one dot per candle + strike + direction (size = premium) · biggest clusters get labels, next get $ chips · hover any mark for the order list</span>
+        <span id="tv-bfly-summary"><i class="tv-dot" style="background:#a78bfa"></i>Butterfly: waiting for candles</span>
+        <span id="tv-sd-summary"><i class="tv-dot" style="background:#10b981"></i>S/D: waiting for candles</span>
+        <span><i class="tv-dot" style="background:#fbbf24"></i>Volume Profile: visible range · POC / VAH / VAL · 70% value area</span>
+        <span><i class="tv-dot" style="background:#3dd0e6"></i><i class="tv-dot" style="background:#f0868c;margin-left:-3px"></i>Flow Force: Premium × |Delta| · LIVE WebSocket when available · ESTIMATED from REST latest-trade + NBBO fallback</span>
+        <span>Dashed lines: call wall / put wall / gamma flip</span>
+        <span style="margin-left:auto">Drawing: click one to select · drag line to move · drag anchor to edit · Erase Selected or Delete removes only that drawing</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/app.js" defer></script>
+</body>
+</html>
+
