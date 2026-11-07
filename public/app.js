@@ -909,7 +909,7 @@ setInterval(updateMarketClock,1000);
 
 // ─── simulation engine ────────────────────────────────────────────────────────
 const simPrice0 = 562.45;   // starting price
-let simPrice   = 562.45;   // current sim price
+let simPrice   = simPrice0;   // current sim price
 let simIv      = 0.18;
 let simTick    = 0;        // ticks elapsed
 let simElapsed = 0;        // seconds elapsed
@@ -1125,8 +1125,17 @@ function demoBootstrap(expiry){
   return {stock:{price:simPrice,previousClose:simPrice0,source:"demo",timestamp:Date.now()},chain:simChain(expiry)};
 }
 
+// A recent swing gives the existing chart scanners a pattern to detect.
+const demoSwing=[[-80,564],[-64,561],[-53,565],[-42,561.86],[-30,563.8],[-16,559.9],[0,simPrice0]];
+
 function demoHistoricalPrice(timestamp){
   const offset=(timestamp-demoStartMinute)/60000;
+  if(offset>=demoSwing[0][0]&&offset<=0){
+    for(let i=1;i<demoSwing.length;i++){
+      const [start,open]=demoSwing[i-1], [end,close]=demoSwing[i];
+      if(offset<=end) return open+(close-open)*(offset-start)/(end-start);
+    }
+  }
   return simPrice0+Math.sin(offset/18)*1.6+Math.sin(offset/4)*.25+Math.sin(offset/390)*2;
 }
 
@@ -1140,7 +1149,13 @@ function demoGexHistory(interval){
 
 function demoCandle(t,open,close){
   const o=+open.toFixed(2),c=+close.toFixed(2);
-  return {t,o,c,h:+(Math.max(o,c)+.12).toFixed(2),l:+(Math.min(o,c)-.12).toFixed(2),v:12000+(t/60000%17)*1700,vw:(o+c)/2};
+  const minute=t/60000;
+  const inSwing=t>=demoStartMinute+demoSwing[0][0]*60000&&t<=demoStartMinute;
+  const lowerTail=!inSwing&&minute%31===0;
+  const upperTail=!inSwing&&minute%37===0;
+  const upperWick=upperTail ? .65 : lowerTail ? .03 : .10;
+  const lowerWick=lowerTail ? .65 : upperTail ? .03 : .10;
+  return {t,o,c,h:+(Math.max(o,c)+upperWick).toFixed(2),l:+(Math.min(o,c)-lowerWick).toFixed(2),v:12000+(minute%17)*1700,vw:(o+c)/2};
 }
 
 function demoCandleHistory(from,to){
