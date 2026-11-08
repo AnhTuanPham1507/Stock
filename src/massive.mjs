@@ -1,3 +1,5 @@
+import { errorDetails, log } from "./logger.mjs";
+
 const OPTION_SYMBOL = /^O:SPY(\d{6})([CP])(\d{8})$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -156,15 +158,27 @@ export class MarketDataService {
     return pending;
   }
 
-  async requestJson(pathname, apiKey) {
-    if (!apiKey) throw new UpstreamError("The server is missing a Massive API key", 503);
+  async requestJson(pathname, apiKey, operation = "request") {
+    const startedAt = performance.now();
+    const logFailure = (reason, status, details) => {
+      log("warn", "massive.rest.failed", {
+        operation, reason, status, durationMs: Math.round(performance.now() - startedAt), ...details
+      });
+    };
+    if (!apiKey) {
+      logFailure("missing_key", 503);
+      throw new UpstreamError("The server is missing a Massive API key", 503);
+    }
     const target = new URL(pathname, `${this.config.restBaseUrl}/`);
     if (target.origin !== new URL(this.config.restBaseUrl).origin) {
+      logFailure("unexpected_origin", 502);
       throw new UpstreamError("Rejected upstream URL", 502);
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.upstreamTimeoutMs);
     timer.unref?.();
+    let upstreamStatus;
+    let providerError = false;
     try {
       const response = await fetch(target, {
         signal: controller.signal,
@@ -175,6 +189,7 @@ export class MarketDataService {
         },
         redirect: "error"
       });
+      upstreamStatus = response.status;
       const contentLength = Number(response.headers.get("content-length") || 0);
       if (contentLength > 15_000_000) throw new UpstreamError("Upstream response is too large", 502);
       const text = await response.text();
@@ -182,14 +197,24 @@ export class MarketDataService {
       let payload = {};
       try { payload = text ? JSON.parse(text) : {}; } catch { throw new UpstreamError("Upstream returned invalid JSON", 502); }
       if (!response.ok) {
+        providerError = true;
         const message = typeof payload?.message === "string" ? payload.message : `Massive request failed with ${response.status}`;
         throw new UpstreamError(message.slice(0, 300), response.status, response.headers.get("retry-after") || "");
       }
       return payload;
     } catch (error) {
-      if (error instanceof UpstreamError) throw error;
-      if (error?.name === "AbortError") throw new UpstreamError("Massive request timed out", 504);
+      if (error instanceof UpstreamError) {
+        logFailure(providerError ? "http_error" : "invalid_response", error.status, {
+          upstreamStatus, message: providerError ? undefined : error.message
+        });
+        throw error;
+      }
+      if (error?.name === "AbortError") {
+        logFailure("timeout", 504, { upstreamStatus, timeoutMs: this.config.upstreamTimeoutMs });
+        throw new UpstreamError("Massive request timed out", 504);
+      }
       const code = String(error?.cause?.code || error?.code || "");
+      logFailure("transport", 502, { upstreamStatus, error: errorDetails(error, this.config) });
       const detail = ['ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'].includes(code) ? ` (${code})` : "";
       throw new UpstreamError(`Cannot connect to Massive${detail}. Check the server network connection.`, 502);
     } finally {
@@ -199,7 +224,7 @@ export class MarketDataService {
 
   async getStockSnapshot() {
     return this.cached("stock-snapshot", this.config.restCacheMs, async () => {
-      const payload = await this.requestJson("/v2/snapshot/locale/us/markets/stocks/tickers/SPY", this.config.stocksApiKey);
+      const payload = await this.requestJson("/v2/snapshot/locale/us/markets/stocks/tickers/SPY", this.config.stocksApiKey, "stock_snapshot");
       const ticker = payload?.ticker || {};
       const price = ticker?.day?.c ?? ticker?.lastTrade?.p ?? ticker?.min?.c;
       const previousClose = ticker?.prevDay?.c;
@@ -218,7 +243,7 @@ export class MarketDataService {
       for (let page = 0; path && page < this.config.maxOptionChainPages; page++) {
         if (seen.has(path)) throw new UpstreamError("Upstream pagination loop detected", 502);
         seen.add(path);
-        const payload = await this.requestJson(path, this.config.optionsApiKey);
+        const payload = await this.requestJson(path, this.config.optionsApiKey, "option_chain");
         if (Array.isArray(payload?.results)) {
           const remaining = this.config.maxOptionChainResults - results.length;
           results.push(...payload.results.slice(0, remaining).map(item => sanitizeOptionContract(item, expiry)).filter(Boolean));
@@ -278,7 +303,8 @@ export class MarketDataService {
     return this.cached(key, Math.max(this.config.restCacheMs, 5000), async () => {
       const payload = await this.requestJson(
         `/v2/aggs/ticker/SPY/range/1/minute/${from}/${to}?adjusted=true&sort=asc&limit=50000`,
-        this.config.stocksApiKey
+        this.config.stocksApiKey,
+        "candles"
       );
       return { results: Array.isArray(payload?.results) ? payload.results.map(sanitizeCandle).filter(Boolean).slice(0, 50000) : [] };
     });
@@ -333,8 +359,13 @@ export class MassiveProvider {
   }
 
   updateStatus(kind, status, detail = "") {
+    const previousStatus = this.status[kind];
     this.status[kind] = status;
     this.market.setFeedStatus(kind, status);
+    if (status !== previousStatus) {
+      const level = ["missing-key", "unsupported", "auth-failed", "degraded"].includes(status) ? "warn" : "info";
+      log(level, "massive.ws.status", { feed: kind, previousStatus, status });
+    }
     this.hub.publish("feed_status", { ...this.status, detail: String(detail || "").slice(0, 200), timestamp: Date.now() });
   }
 
@@ -349,7 +380,11 @@ export class MassiveProvider {
     this.updateStatus(kind, "connecting");
     let socket;
     try { socket = new WebSocket(target); }
-    catch { this.scheduleReconnect(kind); return; }
+    catch (error) {
+      log("warn", "massive.ws.error", { feed: kind, error: errorDetails(error, this.config) });
+      this.scheduleReconnect(kind);
+      return;
+    }
     this.sockets[kind] = socket;
     let authSent = false;
     const sendAuth = () => {
@@ -379,15 +414,19 @@ export class MassiveProvider {
         else this.handleOption(message);
       }
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", event => {
       if (this.sockets[kind] === socket) this.sockets[kind] = null;
       if (kind === "options") this.optionSubscriptions.clear();
       if (!this.stopped) {
+        log("warn", "massive.ws.closed", { feed: kind, code: event.code, clean: event.wasClean });
         this.updateStatus(kind, "reconnecting");
         this.scheduleReconnect(kind);
       }
     });
-    socket.addEventListener("error", () => { try { socket.close(); } catch {} });
+    socket.addEventListener("error", event => {
+      if (!this.stopped) log("warn", "massive.ws.error", { feed: kind, error: errorDetails(event.error, this.config) });
+      try { socket.close(); } catch {}
+    });
   }
 
   scheduleReconnect(kind) {
@@ -395,6 +434,7 @@ export class MassiveProvider {
     const base = this.backoff[kind];
     const delay = Math.round(base * (0.75 + Math.random() * 0.5));
     this.backoff[kind] = Math.min(base * 2, 30000);
+    log("info", "massive.ws.reconnect_scheduled", { feed: kind, delayMs: delay });
     this.reconnectTimers[kind] = setTimeout(() => {
       this.reconnectTimers[kind] = null;
       this.connect(kind);

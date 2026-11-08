@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createSecurityHeaders } from "./security.mjs";
-import { isValidExpiry, isValidDate } from "./massive.mjs";
+import { isValidExpiry, isValidDate, UpstreamError } from "./massive.mjs";
+import { errorDetails, log } from "./logger.mjs";
+
+const LOGGED_ROUTES = new Set([
+  "/", "/index.html", "/app.js", "/vendor/chart.umd.js", "/favicon.ico", "/healthz", "/readyz",
+  "/auth/exchange", "/api/v1/session", "/api/v1/bootstrap", "/api/v1/candles", "/api/v1/stream"
+]);
 
 class FixedWindowLimiter {
   constructor(limit, windowMs) {
@@ -90,8 +96,27 @@ function unauthorized(response, config, wantsHtml = false) {
 
 export function createRequestHandler({ config, auth, market, provider, hub }) {
   const exchangeLimiter = new FixedWindowLimiter(10, 60_000);
+  let nextRequestId = 0;
 
   return async function requestHandler(request, response) {
+    const requestId = ++nextRequestId;
+    const startedAt = performance.now();
+    let route = "unmatched";
+    let streamConnected = false;
+    const logResponse = outcome => {
+      const status = response.headersSent ? response.statusCode : undefined;
+      if (outcome === "finished" && status < 400 && (route === "/healthz" || route === "/readyz")) return;
+      const level = !streamConnected && (outcome === "disconnected" || status >= 400) ? "warn" : "info";
+      log(level, streamConnected ? "sse.closed" : "http.request.completed", {
+        requestId, method: request.method, route, status, outcome,
+        durationMs: Math.round(performance.now() - startedAt)
+      });
+    };
+    response.once("finish", () => logResponse("finished"));
+    response.once("close", () => {
+      if (!response.writableFinished) logResponse("disconnected");
+    });
+
     try {
       if (!hostIsAllowed(request, config)) {
         sendJson(response, config, 421, { error: "invalid_host" });
@@ -99,6 +124,7 @@ export function createRequestHandler({ config, auth, market, provider, hub }) {
       }
       const base = config.publicOrigin || `http://${request.headers.host || "localhost"}`;
       const url = new URL(request.url || "/", base);
+      if (LOGGED_ROUTES.has(url.pathname)) route = url.pathname;
 
       if (request.method === "GET" && url.pathname === "/healthz") {
         sendJson(response, config, 200, { status: "ok" });
@@ -196,6 +222,8 @@ export function createRequestHandler({ config, auth, market, provider, hub }) {
           "X-Accel-Buffering": "no"
         });
         const client = hub.add(request, response, user, { expiry, range });
+        streamConnected = true;
+        log("info", "sse.connected", { requestId, route });
         hub.sendDirect(client, "feed_status", { ...provider.status, timestamp: Date.now() });
         provider.syncSubscriptions();
         return;
@@ -208,6 +236,12 @@ export function createRequestHandler({ config, auth, market, provider, hub }) {
       sendJson(response, config, 404, { error: "not_found" });
     } catch (error) {
       const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : 500;
+      if (status >= 500) {
+        log("error", "http.request.failed", {
+          requestId, route, status,
+          error: error instanceof UpstreamError ? { name: error.name } : errorDetails(error, config)
+        });
+      }
       const safeMessage = status >= 500 && status !== 502 && status !== 503 && status !== 504
         ? "Internal server error"
         : String(error?.message || "Request failed").slice(0, 300);

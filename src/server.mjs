@@ -7,13 +7,14 @@ import { AuthService } from "./security.mjs";
 import { SseHub } from "./sse-hub.mjs";
 import { MarketDataService, MassiveProvider } from "./massive.mjs";
 import { createRequestHandler } from "./app.mjs";
+import { errorDetails, log } from "./logger.mjs";
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function loadProjectEnv() {
   try {
     loadEnvFile(path.join(PROJECT_DIR, ".env"));
-    console.log("Loaded configuration from .env");
+    log("info", "server.env_loaded");
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
@@ -36,36 +37,53 @@ export async function startApplication(config = loadConfig()) {
   const application = createApplication(config);
   await new Promise((resolve, reject) => {
     application.server.once("error", reject);
-    application.server.listen(config.port, config.host, resolve);
+    application.server.listen(config.port, config.host, () => {
+      application.server.off("error", reject);
+      resolve();
+    });
   });
+  const { address, port } = application.server.address();
+  log("info", "server.listening", { address, port, authMode: config.authMode, production: config.production });
   application.provider.start();
-  const visibleHost = config.host === "127.0.0.1" ? "localhost" : config.host;
-  console.log(`SPY Flow server listening on http://${visibleHost}:${config.port}`);
-  if (!config.stocksApiKey) console.warn("MASSIVE_STOCKS_API_KEY is not configured");
-  if (!config.optionsApiKey) console.warn("MASSIVE_OPTIONS_API_KEY is not configured");
-  if (config.authMode === "none") console.warn("Authentication is disabled for local development");
+  if (config.authMode === "none") log("warn", "server.auth_disabled");
   return application;
 }
 
 async function main() {
+  log("info", "server.starting", { nodeVersion: process.version });
+  loadProjectEnv();
   const application = await startApplication();
   let shuttingDown = false;
-  const shutdown = () => {
+  const shutdown = signal => {
     if (shuttingDown) return;
     shuttingDown = true;
+    log("info", "server.shutdown_started", { signal });
     application.provider.stop();
     application.hub.close();
-    application.server.close(() => process.exit(0));
-    setTimeout(() => process.exit(1), 10_000).unref();
+    application.server.close(error => {
+      if (error) exitWithError("server.shutdown_failed", error);
+      log("info", "server.shutdown_completed", { signal }, { sync: true });
+      process.exit(0);
+    });
+    setTimeout(() => {
+      log("error", "server.shutdown_timeout", { signal, timeoutMs: 10_000 }, { sync: true });
+      process.exit(1);
+    }, 10_000).unref();
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+
+function exitWithError(event, error) {
+  try {
+    log("error", event, { error: errorDetails(error) }, { sync: true });
+  } finally {
+    process.exit(1);
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  loadProjectEnv();
-  main().catch(error => {
-    console.error(error?.message || error);
-    process.exit(1);
-  });
+  process.on("uncaughtException", error => exitWithError("process.uncaught_exception", error));
+  process.on("unhandledRejection", error => exitWithError("process.unhandled_rejection", error));
+  main().catch(error => exitWithError("server.startup_failed", error));
 }
