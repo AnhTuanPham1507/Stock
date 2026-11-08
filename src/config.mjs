@@ -65,6 +65,7 @@ export function loadConfig(env = process.env) {
     restBaseUrl: url(env, "MASSIVE_REST_BASE_URL", "https://api.massive.com"),
     stocksWsUrl: url(env, "MASSIVE_STOCKS_WS_URL", "wss://socket.massive.com/stocks"),
     optionsWsUrl: url(env, "MASSIVE_OPTIONS_WS_URL", "wss://socket.massive.com/options"),
+    massiveWsLogs: bool(env, "MASSIVE_WS_LOGS", false),
     upstreamTimeoutMs: integer(env, "UPSTREAM_TIMEOUT_MS", 10000, 1000, 60000),
     restCacheMs: integer(env, "REST_CACHE_MS", 2500, 250, 60000),
     maxSseClients: integer(env, "MAX_SSE_CLIENTS", 100, 1, 10000),

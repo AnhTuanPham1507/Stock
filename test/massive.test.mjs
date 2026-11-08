@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isValidDate, isValidExpiry, MarketDataService, parseOptionSymbol, UpstreamError } from "../src/massive.mjs";
+import { loadConfig } from "../src/config.mjs";
+import { isValidDate, isValidExpiry, MarketDataService, MassiveProvider, parseOptionSymbol, UpstreamError } from "../src/massive.mjs";
 
 test("expiration and option symbols are strictly validated", () => {
   assert.equal(isValidExpiry("2030-01-04"), true);
@@ -51,4 +52,38 @@ test("Options permissions are retried at most once a minute after a denial", asy
   market.optionsAccessDeniedUntil=0;
   await assert.rejects(market.getOptionChain("2030-01-04"), /Not entitled/);
   assert.equal(requests,2);
+});
+
+test("a failed WebSocket handshake is silent by default and schedules one reconnect", t => {
+  const WebSocket = globalThis.WebSocket;
+  const socketError = message => Object.assign(new Event("error"), { error: new Error(message) });
+  globalThis.WebSocket = class extends EventTarget {
+    readyState = 0;
+    closeCalls = 0;
+
+    close() {
+      if (++this.closeCalls === 1) this.dispatchEvent(socketError("Connection was closed before it was established."));
+    }
+  };
+  t.after(() => { globalThis.WebSocket = WebSocket; });
+
+  const warnings = t.mock.method(console, "warn", () => {});
+  const info = t.mock.method(console, "info", () => {});
+  const config = loadConfig({ MASSIVE_STOCKS_API_KEY: "test-key" });
+  const provider = new MassiveProvider(config, { publish() {} }, new MarketDataService(config));
+  t.after(() => provider.stop());
+  provider.connect("stocks");
+  const socket = provider.sockets.stocks;
+
+  socket.dispatchEvent(socketError("Received network error or non-101 status code."));
+  const retry = provider.reconnectTimers.stocks;
+  socket.dispatchEvent(new Event("close"));
+
+  assert.ok(retry);
+  assert.equal(provider.reconnectTimers.stocks, retry);
+  assert.equal(socket.closeCalls, 0);
+  assert.equal(provider.sockets.stocks, null);
+  assert.equal(provider.status.stocks, "reconnecting");
+  assert.equal(warnings.mock.callCount(), 0);
+  assert.equal(info.mock.callCount(), 0);
 });

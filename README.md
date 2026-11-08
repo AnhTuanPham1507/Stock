@@ -98,7 +98,8 @@ The service deliberately has no generic upstream proxy, arbitrary symbol endpoin
 ## Operational notes
 
 - Disable proxy buffering and compression for `/api/v1/stream`; the included Nginx configuration does this.
-- The server writes one JSON object per log line to stdout or stderr. Logs cover startup, HTTP requests, SSE connections, Massive REST failures, WebSocket status and reconnects, and process failures or shutdowns. Successful health and readiness probes and individual market updates are omitted.
+- The server writes one JSON object per log line to stdout or stderr. Logs cover startup, HTTP requests, SSE connections, Massive REST failures, and process failures or shutdowns. Successful health and readiness probes and individual market updates are omitted.
+- Massive WebSocket logs are off by default. Set `MASSIVE_WS_LOGS=true` and restart the server to see connection status, errors and reconnect attempts.
 - Use `docker logs -f <container>` to follow the logs in Docker. To keep a copy when running locally in PowerShell, use `npm start 2>&1 | Tee-Object -FilePath "$env:TEMP\spy-flow-server.log" -Append`.
 - Request logs record a known route and omit query strings, headers, and bodies. Massive logs omit provider payloads and authentication frames. Error details mask configured credentials and URLs.
 - `MAX_OPTION_CONTRACTS` cannot exceed the provider's 1,000-contract options-quote limit.

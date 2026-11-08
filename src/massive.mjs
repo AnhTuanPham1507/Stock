@@ -362,7 +362,7 @@ export class MassiveProvider {
     const previousStatus = this.status[kind];
     this.status[kind] = status;
     this.market.setFeedStatus(kind, status);
-    if (status !== previousStatus) {
+    if (this.config.massiveWsLogs && status !== previousStatus) {
       const level = ["missing-key", "unsupported", "auth-failed", "degraded"].includes(status) ? "warn" : "info";
       log(level, "massive.ws.status", { feed: kind, previousStatus, status });
     }
@@ -381,19 +381,22 @@ export class MassiveProvider {
     let socket;
     try { socket = new WebSocket(target); }
     catch (error) {
-      log("warn", "massive.ws.error", { feed: kind, error: errorDetails(error, this.config) });
+      if (this.config.massiveWsLogs) {
+        log("warn", "massive.ws.error", { feed: kind, error: errorDetails(error, this.config) });
+      }
       this.scheduleReconnect(kind);
       return;
     }
     this.sockets[kind] = socket;
     let authSent = false;
     const sendAuth = () => {
-      if (authSent || socket.readyState !== WebSocket.OPEN) return;
+      if (this.sockets[kind] !== socket || authSent || socket.readyState !== WebSocket.OPEN) return;
       authSent = true;
       socket.send(JSON.stringify({ action: "auth", params: key }));
     };
     socket.addEventListener("open", sendAuth);
     socket.addEventListener("message", event => {
+      if (this.sockets[kind] !== socket) return;
       const messages = safeJsonMessage(event.data);
       for (const message of messages) {
         if (message?.ev === "status") {
@@ -414,19 +417,27 @@ export class MassiveProvider {
         else this.handleOption(message);
       }
     });
-    socket.addEventListener("close", event => {
-      if (this.sockets[kind] === socket) this.sockets[kind] = null;
+    // A failed handshake can emit only "error". Calling close() from that handler can emit it again synchronously.
+    const disconnect = event => {
+      if (this.stopped || this.sockets[kind] !== socket) return;
+      this.sockets[kind] = null;
       if (kind === "options") this.optionSubscriptions.clear();
-      if (!this.stopped) {
-        log("warn", "massive.ws.closed", { feed: kind, code: event.code, clean: event.wasClean });
-        this.updateStatus(kind, "reconnecting");
-        this.scheduleReconnect(kind);
+      if (this.config.massiveWsLogs) {
+        if (event.type === "error") {
+          log("warn", "massive.ws.error", {
+            feed: kind,
+            status: this.status[kind],
+            error: errorDetails(event.error, this.config, { includeStack: false })
+          });
+        } else {
+          log("warn", "massive.ws.closed", { feed: kind, code: event.code, clean: event.wasClean });
+        }
       }
-    });
-    socket.addEventListener("error", event => {
-      if (!this.stopped) log("warn", "massive.ws.error", { feed: kind, error: errorDetails(event.error, this.config) });
-      try { socket.close(); } catch {}
-    });
+      this.updateStatus(kind, "reconnecting");
+      this.scheduleReconnect(kind);
+    };
+    socket.addEventListener("error", disconnect);
+    socket.addEventListener("close", disconnect);
   }
 
   scheduleReconnect(kind) {
@@ -434,7 +445,9 @@ export class MassiveProvider {
     const base = this.backoff[kind];
     const delay = Math.round(base * (0.75 + Math.random() * 0.5));
     this.backoff[kind] = Math.min(base * 2, 30000);
-    log("info", "massive.ws.reconnect_scheduled", { feed: kind, delayMs: delay });
+    if (this.config.massiveWsLogs) {
+      log("info", "massive.ws.reconnect_scheduled", { feed: kind, delayMs: delay });
+    }
     this.reconnectTimers[kind] = setTimeout(() => {
       this.reconnectTimers[kind] = null;
       this.connect(kind);
@@ -534,8 +547,11 @@ export class MassiveProvider {
     clearTimeout(this.quoteTimer);
     for (const kind of ['stocks', 'options']) {
       clearTimeout(this.reconnectTimers[kind]);
-      try { this.sockets[kind]?.close(); } catch {}
+      this.reconnectTimers[kind] = null;
+      const socket = this.sockets[kind];
       this.sockets[kind] = null;
+      try { socket?.close(); } catch {}
     }
+    this.optionSubscriptions.clear();
   }
 }

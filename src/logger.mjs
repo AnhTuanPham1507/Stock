@@ -16,7 +16,7 @@ function redact(value, secrets) {
     .replace(/\bBearer[ \t]+\S+/gi, "Bearer [redacted]");
 }
 
-export function errorDetails(error, config = {}) {
+export function errorDetails(error, config = {}, { includeStack = true } = {}) {
   if (!(error instanceof Error)) return { type: typeof error };
   const secrets = [
     config.stocksApiKey, config.optionsApiKey, config.ssoSecret,
@@ -27,7 +27,7 @@ export function errorDetails(error, config = {}) {
     message: redact(value.message, secrets)?.slice(0, 500),
     code: redact(value.code, secrets)
   });
-  const frames = typeof error.stack === "string"
+  const frames = includeStack && typeof error.stack === "string"
     ? error.stack.split("\n").filter(line => /^\s+at /.test(line)).slice(0, 12)
     : undefined;
   return {
