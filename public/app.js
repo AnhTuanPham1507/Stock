@@ -18,7 +18,7 @@ let MASSIVE_KEY = "server-managed";
 // Inline event attributes were converted to inert data attributes so CSP can
 // block injected scripts. Only this explicit function allowlist can run.
 const UI_ACTIONS={
-  showGate,tryConnect,toggleDemoMode,changeExpiration,setScenario,setSimSpeed,
+  toggleDemoMode,changeExpiration,setScenario,setSimSpeed,
   switchTab,openPremiumWindow,openChartWindow,toggleAR,fetchAll,
   setPressurePremiumFilter,setCt,setSrt,setTapeViewMode,setTapePremium,
   setTapePremiumCustom,setTapeStatusFilter,setWsRange,toggleWsDebug,clearTape,
@@ -44,10 +44,6 @@ function parseUiArgument(token,element){
 }
 
 function runUiAction(code,element,event){
-  if(code==="if(event.key==='Enter')tryConnect()"){
-    if(event.key==="Enter")tryConnect();
-    return;
-  }
   for(const statement of String(code||"").split(";").map(v=>v.trim()).filter(Boolean)){
     const match=/^([A-Za-z_$][\w$]*)\((.*)\)$/.exec(statement);
     if(!match||!Object.hasOwn(UI_ACTIONS,match[1]))continue;
@@ -4971,31 +4967,6 @@ function renderCharts(calls,puts){
   strikeChartSignature=signature;
 }
 
-// ─── server connection gate ───────────────────────────────────────────────────
-function showGate(){
-  document.getElementById("key-gate").style.display="flex";
-  document.getElementById("main").classList.remove("on");
-  document.getElementById("chg-key-btn").style.display="none";
-}
-function hideGate(){
-  document.getElementById("key-gate").style.display="none";
-  document.getElementById("main").classList.add("on");
-  document.getElementById("chg-key-btn").style.display="none";
-}
-
-async function tryConnect(){
-  const errEl=document.getElementById("kerr"); errEl.style.display="none";
-  const btn=document.getElementById("kbtn"); btn.textContent="CONNECTING…"; btn.disabled=true;
-  try{
-    API_KEY="server-managed"; MASSIVE_KEY="server-managed";
-    hideGate();
-    connectSpyWS();
-    await fetchAll();
-    if(autoRef) arTimer=setInterval(fetchAll,3000);
-  }catch(e){errEl.textContent="⚠ "+e.message;errEl.style.display="block";showGate();}
-  btn.textContent="RETRY"; btn.disabled=false;
-}
-
 // ─── UI controls ──────────────────────────────────────────────────────────────
 function switchTab(btn,name){
   document.querySelectorAll(".tc").forEach(e=>e.classList.remove("on"));
@@ -5552,7 +5523,7 @@ if(CHART_WINDOW_MODE){
   setTimeout(reconcileFinalizedTradingCandles,15000);
 
   if(API_KEY){
-    hideGate();
+    document.getElementById("main").classList.add("on");
     // Initialize WS range UI to stored value
     const rangeInp = document.getElementById("ws-range-input");
     const rangeAll = document.getElementById("ws-range-all");
@@ -5568,7 +5539,6 @@ if(CHART_WINDOW_MODE){
   const initialTab=location.hash.slice(1);
   const tabButton=[...document.querySelectorAll(".tab-switch-btn")].find(button=>button.dataset.onclick.includes("'"+initialTab+"'"));
   if(tabButton) switchTab(tabButton,initialTab);
-  // else: key gate shown by default (display:flex set in CSS)
 
   document.addEventListener("DOMContentLoaded",()=>{
     initTapePremiumFilter();

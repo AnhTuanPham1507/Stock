@@ -364,7 +364,7 @@ export class MassiveProvider {
     this.market.setFeedStatus(kind, status);
     if (this.config.massiveWsLogs && status !== previousStatus) {
       const level = ["missing-key", "unsupported", "auth-failed", "degraded"].includes(status) ? "warn" : "info";
-      log(level, "massive.ws.status", { feed: kind, previousStatus, status });
+      log(level, "massive.ws.status", { feed: kind, previousStatus, status, detail: String(detail || "").slice(0, 200) });
     }
     this.hub.publish("feed_status", { ...this.status, detail: String(detail || "").slice(0, 200), timestamp: Date.now() });
   }
@@ -400,6 +400,13 @@ export class MassiveProvider {
       const messages = safeJsonMessage(event.data);
       for (const message of messages) {
         if (message?.ev === "status") {
+          if (this.config.massiveWsLogs) {
+            log("info", "massive.ws.provider_status", {
+              feed: kind,
+              providerStatus: String(message.status || "").slice(0, 50),
+              providerMessage: String(message.message || "").slice(0, 300)
+            });
+          }
           if (message.status === "connected" || message.message === "Connected Successfully") sendAuth();
           if (message.status === "auth_success" || message.message === "authenticated") {
             this.backoff[kind] = 1000;
@@ -407,7 +414,9 @@ export class MassiveProvider {
             if (kind === "stocks") socket.send(JSON.stringify({ action: "subscribe", params: "T.SPY,Q.SPY,A.SPY" }));
             else { this.optionSubscriptions.clear(); this.syncSubscriptions(); }
           } else if (message.status === "auth_failed") {
-            this.updateStatus(kind, "auth-failed");
+            this.updateStatus(kind, "auth-failed", message.message || "Provider rejected the API key");
+          } else if (message.status === "max_connections") {
+            this.updateStatus(kind, "degraded", message.message || "Maximum number of websocket connections exceeded");
           } else if (message.status === "error") {
             this.updateStatus(kind, "degraded", message.message || "Provider subscription error");
           }

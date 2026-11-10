@@ -26,19 +26,9 @@ body{background:var(--bg);color:var(--bright);font-family:'Inter',system-ui,sans
 .blink{animation:bl 1.2s step-start infinite}
 @keyframes bl{50%{opacity:.12}}
 
-/* ── key gate ── */
-#key-gate{display:flex;align-items:center;justify-content:center;min-height:80vh;padding:40px}
-.kcard{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:32px;max-width:460px;width:100%;display:flex;flex-direction:column;gap:14px}
-.kcard h2{font-family:'Courier New',monospace;font-size:12px;color:var(--accent);letter-spacing:2px}
-.kcard p{font-family:'Courier New',monospace;font-size:10px;color:var(--text);line-height:1.9}
-.kinput{background:#04060c;border:1px solid var(--border);border-radius:4px;color:var(--bright);font-family:'Courier New',monospace;font-size:12px;padding:10px 14px;width:100%;outline:none;transition:border-color .2s}
-.kinput:focus{border-color:var(--accent)}
-.kbtn{font-family:'Courier New',monospace;font-size:10px;letter-spacing:2px;padding:10px;border-radius:4px;cursor:pointer;border:1px solid var(--accent);background:rgba(56,189,248,.14);color:var(--accent);width:100%;transition:opacity .2s}
-.kbtn:hover{opacity:.85}
 .demo-toggle[aria-pressed="true"],.demo-badge{background:rgba(167,139,250,.14);color:#c4b5fd;border:1px solid rgba(167,139,250,.4)}
 .tv-demo-label{display:none}
 body.chart-window-mode .tv-demo-label:not([hidden]){display:inline-block}
-.kerr{font-family:'Courier New',monospace;font-size:9px;color:var(--red);display:none;padding:6px 10px;background:rgba(248,113,113,.08);border-radius:3px}
 
 /* ── main ── */
 #main{display:none;padding:14px 18px;flex-direction:column;gap:12px}
@@ -202,7 +192,7 @@ body.premium-window-mode .premium-popout-bar{display:none}
 .ss{font-size:11px;color:#afc2d3}
 .slbl{font-size:11.5px;font-weight:700}
 .sig-sub,.bar-row,.meter-labels,.sk-lbl,.sk-vols,
-.pressure-summary,.tape-status,.plan-box,.kcard p{
+.pressure-summary,.tape-status,.plan-box{
   font-size:10.5px;
   color:#afc2d3;
 }
@@ -286,7 +276,7 @@ body.premium-window-mode .premium-popout-bar{display:none}
 .tv-shell.chart-detached .tv-chart-window-notice{display:flex}
 .tv-window-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 body.chart-window-mode{margin:0;background:#070b12;overflow:hidden}
-body.chart-window-mode #hdr,body.chart-window-mode #key-gate,body.chart-window-mode #main>*:not(#tc-chart),body.chart-window-mode #tc-chart>.grid2{display:none!important}
+body.chart-window-mode #hdr,body.chart-window-mode #main>*:not(#tc-chart),body.chart-window-mode #tc-chart>.grid2{display:none!important}
 body.chart-window-mode #main{display:block!important;max-width:none;padding:0;margin:0}
 body.chart-window-mode #tc-chart{display:block!important;margin:0}
 body.chart-window-mode .tv-shell{border:0;border-radius:0;min-height:100vh}
@@ -325,22 +315,9 @@ body.chart-window-mode .tv-volume-wrap{height:110px}
     <span id="status-txt" class="mono" style="font-size:8px;color:var(--dim)">connecting to server…</span>
     <span id="spin" style="display:none;font-family:'Courier New',monospace;font-size:9px;color:var(--accent)">⟳</span>
     <span class="mono" style="font-size:9px;color:var(--text)"><span class="blink" style="color:var(--green)">●</span> <span id="clk"></span></span>
-    <button class="btn" id="chg-key-btn" data-onclick="showGate()" style="display:none;font-size:8px;padding:3px 8px">SERVER</button>
   </div>
 </div>
 
-<!-- SERVER CONNECTION GATE -->
-<div id="key-gate">
-  <div class="kcard">
-    <h2>SECURE MARKET DATA SERVER</h2>
-    <p>
-      Credentials are managed by the Node.js server and are never sent to this browser.<br>
-      Reopen this dashboard from the PHP application if your session has expired.
-    </p>
-    <div class="kerr" id="kerr"></div>
-    <button class="kbtn" id="kbtn" data-onclick="tryConnect()">RETRY CONNECTION</button>
-  </div>
-</div>
 
 <!-- MAIN DASHBOARD -->
 <div id="main">
